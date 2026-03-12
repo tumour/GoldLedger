@@ -1,0 +1,9 @@
+package-as: GoldLedger
+curseforge-id: 1483715
+
+ignore:
+  - .github
+  - README.md
+  - LICENSE
+  - logo.svg
+  - "*.zip"
