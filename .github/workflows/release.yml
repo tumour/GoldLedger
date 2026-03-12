@@ -11,9 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: BigWigsMods/packager-action@v2
-        with:
-          args: -g retail
+      - uses: BigWigsMods/packager@v2
         env:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
