@@ -1,0 +1,4 @@
+# Ensure LF line endings for files parsed by bash on Linux
+.pkgmeta eol=lf
+*.sh eol=lf
+*.yml eol=lf

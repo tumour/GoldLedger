@@ -142,6 +142,19 @@ local function ProcessGoldChange()
         repairPending = false
     end
 
+    -- Детект АХ-почты: если у почтового ящика, проверяем отправителя
+    if source == "mail" and entryType == "income" then
+        local numItems = GetInboxNumItems()
+        for i = 1, numItems do
+            local _, _, sender = GetInboxHeaderInfo(i)
+            if sender and (sender == "Auction House" or sender == "Аукционный дом") then
+                source = "ah"
+                GoldLedger:Debug("Tracker", "AH mail detected from:", sender)
+                break
+            end
+        end
+    end
+
     -- Обновляем статистику сессии
     if entryType == "income" then
         sessionIncome = sessionIncome + absAmount

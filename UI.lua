@@ -363,6 +363,7 @@ local mainFrame
 local FRAME_WIDTH = 380
 local FRAME_HEIGHT = 758
 local activeFilter = "all"   -- Текущий фильтр источника транзакций
+local activeChartPeriod = "7d" -- Текущий период графика: "7d", "30d", "all"
 local CHART_HEIGHT = 100
 local CHART_PADDING_LEFT = 14
 local CHART_PADDING_RIGHT = 14
@@ -371,6 +372,7 @@ local CHART_PADDING_RIGHT = 14
 -- Forward declarations
 -------------------------------------------------------------------------------
 local UpdateEntryRows
+local UpdateChart
 
 -------------------------------------------------------------------------------
 -- Filter buttons update
@@ -551,13 +553,60 @@ local function CreateMainFrame()
     MakeSeparator(f, y) ; y = y - 10
 
     -- === График по дням ===
-    -- Заголовок + легенда на одной линии
+    -- Заголовок
     MakeSectionHeader(f, L["HEADER_CHART"], y)
 
-    -- Легенда (справа от заголовка, на той же строке)
+    -- Кнопки переключения периода (справа от заголовка)
+    local CHART_PERIODS = {
+        { key = "7d",  label = L["CHART_7D"] },
+        { key = "30d", label = L["CHART_30D"] },
+        { key = "all", label = L["CHART_ALL"] },
+    }
+    f.chartPeriodButtons = {}
+
+    local periodX = -14
+    for i = #CHART_PERIODS, 1, -1 do
+        local pInfo = CHART_PERIODS[i]
+        local btn = CreateFrame("Button", nil, f)
+        btn:SetNormalFontObject("GameFontHighlightSmall")
+        btn:SetText(pInfo.label)
+        btn:SetSize(btn:GetFontString():GetStringWidth() + 12, 16)
+        btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", periodX, y - 1)
+        periodX = periodX - btn:GetWidth() - 4
+
+        local btnBg = btn:CreateTexture(nil, "BACKGROUND")
+        btnBg:SetAllPoints()
+        btnBg:SetColorTexture(0.2, 0.2, 0.25, 0.6)
+        btn.bg = btnBg
+
+        btn:SetScript("OnClick", function()
+            activeChartPeriod = pInfo.key
+            -- Обновить подсветку кнопок
+            for _, b in ipairs(f.chartPeriodButtons) do
+                if b.periodKey == activeChartPeriod then
+                    b.bg:SetColorTexture(0.3, 0.5, 0.3, 0.8)
+                else
+                    b.bg:SetColorTexture(0.2, 0.2, 0.25, 0.6)
+                end
+            end
+            UpdateChart()
+        end)
+
+        btn.periodKey = pInfo.key
+        -- Начальная подсветка
+        if pInfo.key == activeChartPeriod then
+            btnBg:SetColorTexture(0.3, 0.5, 0.3, 0.8)
+        end
+
+        table.insert(f.chartPeriodButtons, btn)
+    end
+
+    y = y - 18
+
+    -- Легенда (под заголовком, слева)
     local legendIncome = f:CreateTexture(nil, "ARTWORK")
     legendIncome:SetSize(8, 8)
-    legendIncome:SetPoint("TOPRIGHT", f, "TOPRIGHT", -100, y - 2)
+    legendIncome:SetPoint("TOPLEFT", f, "TOPLEFT", 14, y - 2)
     legendIncome:SetColorTexture(COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3], 0.9)
 
     local legendIncomeText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -575,7 +624,7 @@ local function CreateMainFrame()
     legendExpenseText:SetText(L["HEADER_EXPENSE"])
     legendExpenseText:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
 
-    y = y - 18
+    y = y - 14
 
     -- Контейнер графика (отступ сверху для метки макс.)
     local chartContainer = CreateFrame("Frame", nil, f)
@@ -603,6 +652,7 @@ local function CreateMainFrame()
     f.chartDayLabels = {}
     f.chartContainer = chartContainer
     f.chartBars = {}
+    f.chartHitFrames = {}
 
     y = y - CHART_HEIGHT - 14  -- место для подписей дней
     MakeSeparator(f, y) ; y = y - 10
@@ -794,28 +844,33 @@ end
 -------------------------------------------------------------------------------
 -- Chart update
 -------------------------------------------------------------------------------
-local function UpdateChart()
+UpdateChart = function()
     if not mainFrame or not mainFrame:IsShown() then return end
 
     local Data = GoldLedger:GetModule("Data")
     if not Data then return end
 
-    local chartData, maxVal, daysInMonth = Data:GetMonthlyChartData()
+    local chartData, maxVal, totalBars = Data:GetChartData(activeChartPeriod)
     local container = mainFrame.chartContainer
     local chartWidth = container:GetWidth()
 
     -- Если ширина ещё 0 (первый кадр), отложим
     if chartWidth < 10 then return end
 
-    local barGroupWidth = chartWidth / daysInMonth
+    local barGroupWidth = chartWidth / totalBars
     local barWidth = math.max(2, (barGroupWidth - 2) / 2) -- 2 бара + gap
-    local today = tonumber(date("%d"))
+    local todayKey = date("%Y-%m-%d")
 
     -- Метка максимума
     mainFrame.chartMaxLabel:SetText(GoldFormatter.Short(maxVal))
 
-    -- Шаг подписей: показываем ~6 подписей (1, и каждый N-й)
-    local labelStep = math.ceil(daysInMonth / 6)
+    -- Шаг подписей: показываем ~6 подписей
+    local labelStep = math.max(1, math.ceil(totalBars / 6))
+
+    -- Скрыть старые подписи
+    for _, lbl in pairs(mainFrame.chartDayLabels) do
+        lbl:Hide()
+    end
 
     for i, dayData in ipairs(chartData) do
         -- Создаём бары если нужно
@@ -825,13 +880,11 @@ local function UpdateChart()
             mainFrame.chartBars[i] = { income = incBar, expense = expBar }
         end
 
-        -- Подписи дней: 1 и каждый labelStep-й
+        -- Подписи дней
         if not mainFrame.chartDayLabels[i] then
-            if i == 1 or i % labelStep == 0 then
-                local dayLabel = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                dayLabel:SetTextColor(0.45, 0.45, 0.50)
-                mainFrame.chartDayLabels[i] = dayLabel
-            end
+            local dayLabel = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            dayLabel:SetTextColor(0.45, 0.45, 0.50)
+            mainFrame.chartDayLabels[i] = dayLabel
         end
 
         local bars = mainFrame.chartBars[i]
@@ -852,23 +905,58 @@ local function UpdateChart()
         bars.expense:SetShown(dayData.expense > 0)
 
         -- Подсветка: сегодня яркий, остальные приглушённые
-        local alpha = (i == today) and 1 or 0.5
+        local isToday = dayData.dateKey == todayKey
+        local alpha = isToday and 1 or 0.5
         bars.income:SetColorTexture(COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3], alpha)
         bars.expense:SetColorTexture(COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3], alpha)
 
-        -- Подпись дня
-        if mainFrame.chartDayLabels[i] then
-            local lbl = mainFrame.chartDayLabels[i]
+        -- Подпись дня: показывать 1 и каждый labelStep-й
+        local lbl = mainFrame.chartDayLabels[i]
+        if i == 1 or i % labelStep == 0 then
             lbl:ClearAllPoints()
             lbl:SetPoint("TOP", container, "BOTTOMLEFT", xOffset + barGroupWidth / 2, -1)
-            lbl:SetText(i)
+            lbl:SetText(dayData.label)
+            lbl:Show()
+        else
+            lbl:Hide()
         end
+
+        -- Hit frame для tooltip
+        if not mainFrame.chartHitFrames[i] then
+            local hit = CreateFrame("Frame", nil, container)
+            hit:EnableMouse(true)
+            hit:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:AddLine(self.tipDate or "", 1, 1, 1)
+                if self.tipIncome and self.tipIncome > 0 then
+                    GameTooltip:AddLine(L["HEADER_INCOME"] .. ": " .. GoldFormatter.Full(self.tipIncome), COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
+                end
+                if self.tipExpense and self.tipExpense > 0 then
+                    GameTooltip:AddLine(L["HEADER_EXPENSE"] .. ": " .. GoldFormatter.Full(self.tipExpense), COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+                end
+                GameTooltip:Show()
+            end)
+            hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            mainFrame.chartHitFrames[i] = hit
+        end
+
+        local hit = mainFrame.chartHitFrames[i]
+        hit:ClearAllPoints()
+        hit:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", xOffset, 0)
+        hit:SetSize(barGroupWidth, CHART_HEIGHT)
+        hit.tipDate = dayData.dateKey or dayData.label
+        hit.tipIncome = dayData.income
+        hit.tipExpense = dayData.expense
+        hit:Show()
     end
 
-    -- Скрыть лишние бары (если месяц сменился)
-    for i = daysInMonth + 1, #mainFrame.chartBars do
+    -- Скрыть лишние бары и hit frames
+    for i = #chartData + 1, #mainFrame.chartBars do
         mainFrame.chartBars[i].income:Hide()
         mainFrame.chartBars[i].expense:Hide()
+    end
+    for i = #chartData + 1, #mainFrame.chartHitFrames do
+        mainFrame.chartHitFrames[i]:Hide()
     end
 end
 

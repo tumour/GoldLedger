@@ -167,35 +167,78 @@ function Data:GetMonthlySummary(monthKey)
     return charData.monthly[monthKey] or { income = 0, expense = 0 }
 end
 
---- Возвращает данные по дням текущего месяца для графика
+--- Возвращает данные по дням текущего месяца для графика (legacy)
 --- @return table[] { {day=1, income=N, expense=N}, ... }, number maxValue
 function Data:GetMonthlyChartData()
+    return self:GetChartData("30d")
+end
+
+--- Возвращает данные для графика за указанный период
+--- @param period string "7d"|"30d"|"all"
+--- @return table[] { {label=string, dateKey=string, income=N, expense=N}, ... }, number maxValue, number count
+function Data:GetChartData(period)
     local charData = self:EnsureCharacterData()
-    local monthKey = self:GetMonthKey()
-
-    -- Определяем количество дней в текущем месяце
-    local year, mon = monthKey:match("(%d+)-(%d+)")
-    year, mon = tonumber(year), tonumber(mon)
-    -- Трюк: 0-й день следующего месяца = последний день текущего
-    local daysInMonth = tonumber(date("%d", time({
-        year = year, month = mon + 1, day = 0
-    })))
-
     local result = {}
-    local maxVal = 1 -- минимум 1 чтобы не делить на 0
+    local maxVal = 1
 
-    for day = 1, daysInMonth do
-        local dateKey = ("%04d-%02d-%02d"):format(year, mon, day)
-        local summary = charData.daily[dateKey] or { income = 0, expense = 0 }
-        table.insert(result, {
-            day = day,
-            income = summary.income,
-            expense = summary.expense,
-        })
-        maxVal = math.max(maxVal, summary.income, summary.expense)
+    if period == "7d" then
+        -- Последние 7 дней
+        local now = time()
+        for i = 6, 0, -1 do
+            local t = now - i * SECONDS_PER_DAY
+            local dateKey = date("%Y-%m-%d", t)
+            local dayNum = tonumber(date("%d", t))
+            local summary = charData.daily[dateKey] or { income = 0, expense = 0 }
+            table.insert(result, {
+                label = tostring(dayNum),
+                dateKey = dateKey,
+                income = summary.income,
+                expense = summary.expense,
+            })
+            maxVal = math.max(maxVal, summary.income, summary.expense)
+        end
+        return result, maxVal, 7
+
+    elseif period == "all" then
+        -- Все дни с данными, сортированные по дате
+        local dateKeys = {}
+        for dateKey in pairs(charData.daily) do
+            table.insert(dateKeys, dateKey)
+        end
+        table.sort(dateKeys)
+
+        for _, dateKey in ipairs(dateKeys) do
+            local summary = charData.daily[dateKey]
+            local dayNum = dateKey:match("%d+-%d+-(%d+)")
+            table.insert(result, {
+                label = dayNum,
+                dateKey = dateKey,
+                income = summary.income,
+                expense = summary.expense,
+            })
+            maxVal = math.max(maxVal, summary.income, summary.expense)
+        end
+        local count = #result
+        if count == 0 then count = 1 end
+        return result, maxVal, count
+
+    else -- "30d" default: последние 30 дней
+        local now = time()
+        for i = 29, 0, -1 do
+            local t = now - i * SECONDS_PER_DAY
+            local dateKey = date("%Y-%m-%d", t)
+            local dayNum = tonumber(date("%d", t))
+            local summary = charData.daily[dateKey] or { income = 0, expense = 0 }
+            table.insert(result, {
+                label = tostring(dayNum),
+                dateKey = dateKey,
+                income = summary.income,
+                expense = summary.expense,
+            })
+            maxVal = math.max(maxVal, summary.income, summary.expense)
+        end
+        return result, maxVal, 30
     end
-
-    return result, maxVal, daysInMonth
 end
 
 --- Возвращает последние N записей (новые первыми)

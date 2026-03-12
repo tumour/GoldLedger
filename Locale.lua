@@ -54,6 +54,9 @@ local defaultStrings = {
     -- Chart
     ["HEADER_CHART"]        = "Daily Chart",
     ["CHART_DAY"]           = "Day %d",
+    ["CHART_7D"]            = "7 days",
+    ["CHART_30D"]           = "30 days",
+    ["CHART_ALL"]           = "All",
 
     -- Filter
     ["FILTER_ALL"]          = "All",
@@ -134,6 +137,9 @@ local ruStrings = {
     -- Chart
     ["HEADER_CHART"]        = "График по дням",
     ["CHART_DAY"]           = "День %d",
+    ["CHART_7D"]            = "7 дней",
+    ["CHART_30D"]           = "30 дней",
+    ["CHART_ALL"]           = "Всё",
 
     -- Filter
     ["FILTER_ALL"]          = "Все",
