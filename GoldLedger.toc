@@ -1,0 +1,13 @@
+## Interface: 120001
+## Title: GoldLedger
+## Notes: Monthly gold income/expense tracker | Трекер доходов и расходов голды
+## Author: ivano
+## Version: 1.3.0
+## SavedVariables: GoldLedgerDB
+## IconTexture: Interface\Icons\INV_Misc_Coin_01
+
+Locale.lua
+Core.lua
+Data.lua
+Tracker.lua
+UI.lua

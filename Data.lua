@@ -1,0 +1,369 @@
+--[[
+    GoldLedger: Data.lua
+    Pattern: Facade
+
+    Единый интерфейс для работы с данными:
+    - Инициализация SavedVariables с defaults
+    - CRUD для записей транзакций
+    - Агрегация: дневные и месячные итоги
+    - Авто-очистка старых записей (>90 дней)
+]]
+
+local ADDON_NAME, ns = ...
+local GoldLedger = ns.GoldLedger
+local L = ns.L
+
+local Data = {}
+GoldLedger:RegisterModule("Data", Data)
+
+-------------------------------------------------------------------------------
+-- Constants
+-------------------------------------------------------------------------------
+local MAX_ENTRIES = 500             -- Макс. записей на персонажа
+local CLEANUP_AGE_DAYS = 90        -- Удалять записи старше N дней
+local SECONDS_PER_DAY = 86400
+
+-------------------------------------------------------------------------------
+-- SavedVariables defaults
+-------------------------------------------------------------------------------
+local DB_DEFAULTS = {
+    characters = {},
+    settings = {
+        minimapPos = 225,
+        showMinimap = true,
+    },
+}
+
+-------------------------------------------------------------------------------
+-- Helpers
+-------------------------------------------------------------------------------
+
+--- Возвращает ключ текущего персонажа: "Name-Realm"
+--- @return string
+function Data:GetCharKey()
+    local name = UnitName("player")
+    local realm = GetRealmName()
+    return name .. "-" .. realm
+end
+
+--- Текущая дата в формате "YYYY-MM-DD"
+--- @return string
+function Data:GetDateKey()
+    return date("%Y-%m-%d")
+end
+
+--- Текущий месяц в формате "YYYY-MM"
+--- @return string
+function Data:GetMonthKey()
+    return date("%Y-%m")
+end
+
+--- Deep copy defaults в target (не перезаписывает существующие)
+--- @param target table
+--- @param defaults table
+local function ApplyDefaults(target, defaults)
+    for k, v in pairs(defaults) do
+        if type(v) == "table" then
+            if type(target[k]) ~= "table" then
+                target[k] = {}
+            end
+            ApplyDefaults(target[k], v)
+        elseif target[k] == nil then
+            target[k] = v
+        end
+    end
+end
+
+-------------------------------------------------------------------------------
+-- Lifecycle (вызывается из Core)
+-------------------------------------------------------------------------------
+
+--- Инициализация SavedVariables
+function Data:OnInitialize()
+    -- Создаём или мёржим с defaults
+    if not GoldLedgerDB then
+        GoldLedgerDB = {}
+    end
+    ApplyDefaults(GoldLedgerDB, DB_DEFAULTS)
+
+    -- Гарантируем структуру для текущего персонажа
+    self:EnsureCharacterData()
+
+    -- Очистка старых записей
+    self:CleanupOldEntries()
+end
+
+--- Гарантирует наличие данных текущего персонажа
+function Data:EnsureCharacterData()
+    local key = self:GetCharKey()
+    if not GoldLedgerDB.characters[key] then
+        GoldLedgerDB.characters[key] = {
+            entries = {},
+            daily = {},
+            monthly = {},
+        }
+    end
+    return GoldLedgerDB.characters[key]
+end
+
+-------------------------------------------------------------------------------
+-- Facade API: CRUD
+-------------------------------------------------------------------------------
+
+--- Добавляет запись о транзакции
+--- @param amount number Сумма в copper (положительная = доход, отрицательная = расход)
+--- @param source string|nil Источник: "vendor", "ah", "mail", "quest", "loot", "trade", "unknown"
+function Data:AddEntry(amount, source)
+    if amount == 0 then return end
+
+    local charData = self:EnsureCharacterData()
+    local now = time()
+    local dateKey = self:GetDateKey()
+    local monthKey = self:GetMonthKey()
+    local entryType = amount > 0 and "income" or "expense"
+    local absAmount = math.abs(amount)
+
+    -- 1. Добавить запись в лог
+    table.insert(charData.entries, {
+        timestamp = now,
+        amount = absAmount,
+        type = entryType,
+        source = source or "unknown",
+    })
+
+    -- Ограничение размера: удаляем самые старые
+    while #charData.entries > MAX_ENTRIES do
+        table.remove(charData.entries, 1)
+    end
+
+    -- 2. Обновить дневной итог
+    if not charData.daily[dateKey] then
+        charData.daily[dateKey] = { income = 0, expense = 0 }
+    end
+    charData.daily[dateKey][entryType] = charData.daily[dateKey][entryType] + absAmount
+
+    -- 3. Обновить месячный итог
+    if not charData.monthly[monthKey] then
+        charData.monthly[monthKey] = { income = 0, expense = 0 }
+    end
+    charData.monthly[monthKey][entryType] = charData.monthly[monthKey][entryType] + absAmount
+end
+
+--- Возвращает итоги за день
+--- @param dateKey string|nil Дата "YYYY-MM-DD", nil = сегодня
+--- @return table {income=number, expense=number}
+function Data:GetDailySummary(dateKey)
+    dateKey = dateKey or self:GetDateKey()
+    local charData = self:EnsureCharacterData()
+    return charData.daily[dateKey] or { income = 0, expense = 0 }
+end
+
+--- Возвращает итоги за месяц
+--- @param monthKey string|nil Месяц "YYYY-MM", nil = текущий
+--- @return table {income=number, expense=number}
+function Data:GetMonthlySummary(monthKey)
+    monthKey = monthKey or self:GetMonthKey()
+    local charData = self:EnsureCharacterData()
+    return charData.monthly[monthKey] or { income = 0, expense = 0 }
+end
+
+--- Возвращает данные по дням текущего месяца для графика
+--- @return table[] { {day=1, income=N, expense=N}, ... }, number maxValue
+function Data:GetMonthlyChartData()
+    local charData = self:EnsureCharacterData()
+    local monthKey = self:GetMonthKey()
+
+    -- Определяем количество дней в текущем месяце
+    local year, mon = monthKey:match("(%d+)-(%d+)")
+    year, mon = tonumber(year), tonumber(mon)
+    -- Трюк: 0-й день следующего месяца = последний день текущего
+    local daysInMonth = tonumber(date("%d", time({
+        year = year, month = mon + 1, day = 0
+    })))
+
+    local result = {}
+    local maxVal = 1 -- минимум 1 чтобы не делить на 0
+
+    for day = 1, daysInMonth do
+        local dateKey = ("%04d-%02d-%02d"):format(year, mon, day)
+        local summary = charData.daily[dateKey] or { income = 0, expense = 0 }
+        table.insert(result, {
+            day = day,
+            income = summary.income,
+            expense = summary.expense,
+        })
+        maxVal = math.max(maxVal, summary.income, summary.expense)
+    end
+
+    return result, maxVal, daysInMonth
+end
+
+--- Возвращает последние N записей (новые первыми)
+--- @param count number Количество записей
+--- @return table[] Массив записей
+function Data:GetRecentEntries(count)
+    count = count or 50
+    local charData = self:EnsureCharacterData()
+    local entries = charData.entries
+    local result = {}
+    local start = math.max(1, #entries - count + 1)
+
+    for i = #entries, start, -1 do
+        table.insert(result, entries[i])
+    end
+
+    return result
+end
+
+--- Возвращает настройки аддона
+--- @return table
+function Data:GetSettings()
+    return GoldLedgerDB.settings
+end
+
+-------------------------------------------------------------------------------
+-- Reset & Cleanup
+-------------------------------------------------------------------------------
+
+--- Сбрасывает данные текущего персонажа
+function Data:ResetCharacterData()
+    local key = self:GetCharKey()
+    GoldLedgerDB.characters[key] = nil
+    self:EnsureCharacterData()
+end
+
+-------------------------------------------------------------------------------
+-- Goal API
+-------------------------------------------------------------------------------
+
+--- Устанавливает цель накопления (в copper)
+--- @param amount number Сумма в copper
+function Data:SetGoal(amount)
+    GoldLedgerDB.settings.goalAmount = amount
+end
+
+--- Возвращает текущую цель (в copper), 0 если нет
+--- @return number
+function Data:GetGoal()
+    return GoldLedgerDB.settings.goalAmount or 0
+end
+
+--- Сбрасывает цель
+function Data:ClearGoal()
+    GoldLedgerDB.settings.goalAmount = nil
+end
+
+--- Возвращает прогресс к цели
+--- @return table|nil {goal, current, progress(0-1), remaining, estDays}
+function Data:GetGoalProgress()
+    local goal = self:GetGoal()
+    if goal <= 0 then return nil end
+
+    local currentGold = GetMoney() or 0
+    local progress = currentGold / goal
+    local remaining = goal - currentGold
+
+    -- Оценка дней: средний ежедневный чистый доход
+    local charData = self:EnsureCharacterData()
+    local totalNet = 0
+    local days = 0
+    for _, summary in pairs(charData.daily) do
+        totalNet = totalNet + (summary.income - summary.expense)
+        days = days + 1
+    end
+
+    local avgDaily = days > 0 and (totalNet / days) or 0
+    local estDays = (avgDaily > 0 and remaining > 0) and math.ceil(remaining / avgDaily) or nil
+
+    return {
+        goal = goal,
+        current = currentGold,
+        progress = math.min(1, progress),
+        remaining = remaining,
+        estDays = estDays,
+    }
+end
+
+-------------------------------------------------------------------------------
+-- Multi-character API
+-------------------------------------------------------------------------------
+
+--- Возвращает сводку по всем персонажам за текущий месяц
+--- @return table[] { {name, monthIncome, monthExpense, monthNet}, ... }
+function Data:GetAllCharactersSummary()
+    local result = {}
+    if not GoldLedgerDB or not GoldLedgerDB.characters then return result end
+
+    local monthKey = self:GetMonthKey()
+
+    for charKey, charData in pairs(GoldLedgerDB.characters) do
+        local monthly = charData.monthly and charData.monthly[monthKey]
+            or { income = 0, expense = 0 }
+        table.insert(result, {
+            name = charKey,
+            monthIncome = monthly.income,
+            monthExpense = monthly.expense,
+            monthNet = monthly.income - monthly.expense,
+            entries = charData.entries and #charData.entries or 0,
+        })
+    end
+
+    table.sort(result, function(a, b) return a.monthNet > b.monthNet end)
+    return result
+end
+
+-------------------------------------------------------------------------------
+-- Export API
+-------------------------------------------------------------------------------
+
+--- Возвращает CSV-строку всех записей текущего персонажа
+--- @return string CSV data
+function Data:GetExportCSV()
+    local charData = self:EnsureCharacterData()
+    local lines = { "timestamp,date,time,type,amount_copper,amount_gold,source" }
+
+    for _, entry in ipairs(charData.entries) do
+        local dateStr = date("%Y-%m-%d", entry.timestamp)
+        local timeStr = date("%H:%M:%S", entry.timestamp)
+        local goldAmount = entry.amount / 10000
+        table.insert(lines, ("%d,%s,%s,%s,%d,%.2f,%s"):format(
+            entry.timestamp, dateStr, timeStr,
+            entry.type, entry.amount, goldAmount,
+            entry.source or "unknown"
+        ))
+    end
+
+    return table.concat(lines, "\n")
+end
+
+--- Удаляет записи старше CLEANUP_AGE_DAYS
+function Data:CleanupOldEntries()
+    local charData = self:EnsureCharacterData()
+    local cutoff = time() - (CLEANUP_AGE_DAYS * SECONDS_PER_DAY)
+    local entries = charData.entries
+    local cleaned = {}
+
+    for _, entry in ipairs(entries) do
+        if entry.timestamp >= cutoff then
+            table.insert(cleaned, entry)
+        end
+    end
+
+    charData.entries = cleaned
+
+    -- Очистка старых дневных итогов
+    local dateCutoff = date("%Y-%m-%d", cutoff)
+    for dateKey in pairs(charData.daily) do
+        if dateKey < dateCutoff then
+            charData.daily[dateKey] = nil
+        end
+    end
+
+    -- Очистка старых месячных итогов (>6 месяцев)
+    local monthCutoff = date("%Y-%m", cutoff)
+    for monthKey in pairs(charData.monthly) do
+        if monthKey < monthCutoff then
+            charData.monthly[monthKey] = nil
+        end
+    end
+end

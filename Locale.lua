@@ -1,0 +1,200 @@
+--[[
+    GoldLedger: Locale.lua
+    Pattern: Registry with __index fallback
+
+    Локализация загружается первой. Английский — базовый язык (fallback).
+    Русские строки перекрывают английские через GetLocale().
+    Доступ: GoldLedger.L["KEY"]
+]]
+
+local ADDON_NAME, ns = ...
+
+-------------------------------------------------------------------------------
+-- Registry: базовые строки (English fallback)
+-------------------------------------------------------------------------------
+local defaultStrings = {
+    -- General
+    ["ADDON_LOADED"]        = "|cff00ff00GoldLedger|r loaded. Type |cfffff569/gl|r to open.",
+    ["ADDON_TITLE"]         = "GoldLedger",
+    ["SLASH_HELP"]          = "Usage: /gl — toggle window, /gl reset — reset data",
+    ["RESET_CONFIRM"]       = "All data for this character has been reset.",
+
+    -- UI Headers
+    ["HEADER_TODAY"]        = "Today",
+    ["HEADER_MONTH"]        = "This Month",
+    ["HEADER_RECENT"]       = "Recent Transactions",
+    ["HEADER_SESSION"]      = "Session",
+    ["HEADER_INCOME"]       = "Income",
+    ["HEADER_EXPENSE"]      = "Expense",
+    ["HEADER_BALANCE"]      = "Balance",
+    ["HEADER_NET"]          = "Net",
+    ["HEADER_ON_HAND"]      = "On Hand",
+
+    -- Tooltip
+    ["TOOLTIP_TITLE"]       = "GoldLedger",
+    ["TOOLTIP_HINT"]        = "|cffffffffClick|r to toggle window",
+    ["TOOLTIP_TODAY"]       = "Today",
+    ["TOOLTIP_MONTH"]       = "This Month",
+
+    -- Gold formatting
+    ["GOLD_ABBR"]           = "g",
+    ["SILVER_ABBR"]         = "s",
+    ["COPPER_ABBR"]         = "c",
+
+    -- Time
+    ["TIME_FORMAT"]         = "%H:%M",
+    ["DATE_FORMAT"]         = "%Y-%m-%d",
+    ["MONTH_FORMAT"]        = "%Y-%m",
+
+    -- Messages
+    ["NO_DATA"]             = "No transactions yet.",
+    ["INCOME_LOGGED"]       = "+%s recorded",
+    ["EXPENSE_LOGGED"]      = "-%s recorded",
+
+    -- Chart
+    ["HEADER_CHART"]        = "Daily Chart",
+    ["CHART_DAY"]           = "Day %d",
+
+    -- Filter
+    ["FILTER_ALL"]          = "All",
+
+    -- Source categories
+    ["SRC_VENDOR"]          = "Vendor",
+    ["SRC_AH"]              = "AH",
+    ["SRC_MAIL"]            = "Mail",
+    ["SRC_QUEST"]           = "Quest",
+    ["SRC_LOOT"]            = "Loot",
+    ["SRC_TRADE"]           = "Trade",
+    ["SRC_REPAIR"]          = "Repair",
+    ["SRC_UNKNOWN"]         = "Other",
+
+    -- Goal
+    ["HEADER_GOAL"]          = "Goal",
+    ["GOAL_SET"]             = "Goal set: %s",
+    ["GOAL_CLEARED"]         = "Goal cleared.",
+    ["GOAL_REACHED"]         = "Goal reached!",
+    ["GOAL_REMAINING"]       = "~%d days left",
+    ["GOAL_USAGE"]           = "Usage: /gl goal <gold> | /gl goal clear",
+    ["GOAL_NONE"]            = "Click to set goal",
+    ["GOAL_INPUT_TEXT"]      = "Enter goal amount in gold:",
+    ["GOAL_CLEAR_BTN"]       = "Clear",
+    ["GOAL_CLICK_HINT"]      = "|cffffffffClick|r to change goal",
+
+    -- Multi-character
+    ["HEADER_CHARACTERS"]    = "Characters",
+    ["HEADER_ACCOUNT_TOTAL"] = "Account Total",
+    ["CHAR_MONTH_LABEL"]     = "This month",
+
+    -- Export
+    ["EXPORT_BUTTON"]        = "Export",
+    ["EXPORT_TITLE"]         = "Export Data (CSV)",
+    ["EXPORT_HINT"]          = "Ctrl+A, then Ctrl+C to copy",
+}
+
+-------------------------------------------------------------------------------
+-- Registry: русские строки (ruRU override)
+-------------------------------------------------------------------------------
+local ruStrings = {
+    -- General
+    ["ADDON_LOADED"]        = "|cff00ff00GoldLedger|r загружен. Введите |cfffff569/gl|r для открытия.",
+    ["SLASH_HELP"]          = "Использование: /gl — окно, /gl reset — сброс данных",
+    ["RESET_CONFIRM"]       = "Все данные персонажа сброшены.",
+
+    -- UI Headers
+    ["HEADER_TODAY"]        = "Сегодня",
+    ["HEADER_MONTH"]        = "Этот месяц",
+    ["HEADER_RECENT"]       = "Последние транзакции",
+    ["HEADER_SESSION"]      = "Сессия",
+    ["HEADER_INCOME"]       = "Доход",
+    ["HEADER_EXPENSE"]      = "Расход",
+    ["HEADER_BALANCE"]      = "Баланс",
+    ["HEADER_NET"]          = "Итого",
+    ["HEADER_ON_HAND"]      = "На руках",
+
+    -- Tooltip
+    ["TOOLTIP_HINT"]        = "|cffffffffКлик|r — открыть окно",
+    ["TOOLTIP_TODAY"]       = "Сегодня",
+    ["TOOLTIP_MONTH"]       = "Этот месяц",
+
+    -- Gold formatting
+    ["GOLD_ABBR"]           = "з",
+    ["SILVER_ABBR"]         = "с",
+    ["COPPER_ABBR"]         = "м",
+
+    -- Time
+    ["TIME_FORMAT"]         = "%H:%M",
+    ["DATE_FORMAT"]         = "%d.%m.%Y",
+    ["MONTH_FORMAT"]        = "%Y-%m",
+
+    -- Messages
+    ["NO_DATA"]             = "Транзакций пока нет.",
+    ["INCOME_LOGGED"]       = "+%s записан",
+    ["EXPENSE_LOGGED"]      = "-%s записан",
+
+    -- Chart
+    ["HEADER_CHART"]        = "График по дням",
+    ["CHART_DAY"]           = "День %d",
+
+    -- Filter
+    ["FILTER_ALL"]          = "Все",
+
+    -- Source categories
+    ["SRC_VENDOR"]          = "Вендор",
+    ["SRC_AH"]              = "АХ",
+    ["SRC_MAIL"]            = "Почта",
+    ["SRC_QUEST"]           = "Квест",
+    ["SRC_LOOT"]            = "Лут",
+    ["SRC_TRADE"]           = "Обмен",
+    ["SRC_REPAIR"]          = "Ремонт",
+    ["SRC_UNKNOWN"]         = "Другое",
+
+    -- Goal
+    ["HEADER_GOAL"]          = "Цель",
+    ["GOAL_SET"]             = "Цель: %s",
+    ["GOAL_CLEARED"]         = "Цель сброшена.",
+    ["GOAL_REACHED"]         = "Цель достигнута!",
+    ["GOAL_REMAINING"]       = "~%d дн. осталось",
+    ["GOAL_USAGE"]           = "/gl goal <сумма в голде> | /gl goal clear",
+    ["GOAL_NONE"]            = "Нажмите для установки цели",
+    ["GOAL_INPUT_TEXT"]      = "Введите сумму цели (в голде):",
+    ["GOAL_CLEAR_BTN"]       = "Сброс",
+    ["GOAL_CLICK_HINT"]      = "|cffffffffКлик|r — изменить цель",
+
+    -- Multi-character
+    ["HEADER_CHARACTERS"]    = "Персонажи",
+    ["HEADER_ACCOUNT_TOTAL"] = "Итого по аккаунту",
+    ["CHAR_MONTH_LABEL"]     = "За месяц",
+
+    -- Export
+    ["EXPORT_BUTTON"]        = "Экспорт",
+    ["EXPORT_TITLE"]         = "Экспорт данных (CSV)",
+    ["EXPORT_HINT"]          = "Ctrl+A, затем Ctrl+C для копирования",
+}
+
+-------------------------------------------------------------------------------
+-- Fallback mechanism via __index metamethod
+-------------------------------------------------------------------------------
+local L = {}
+
+local clientLocale = GetLocale()
+
+if clientLocale == "ruRU" then
+    -- ruRU: русские строки с fallback на английские
+    setmetatable(L, {
+        __index = function(_, key)
+            return ruStrings[key] or defaultStrings[key] or key
+        end
+    })
+else
+    -- All other locales: English strings with key fallback
+    setmetatable(L, {
+        __index = function(_, key)
+            return defaultStrings[key] or key
+        end
+    })
+end
+
+-------------------------------------------------------------------------------
+-- Export to addon namespace
+-------------------------------------------------------------------------------
+ns.L = L
