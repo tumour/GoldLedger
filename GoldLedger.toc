@@ -2,7 +2,7 @@
 ## Title: GoldLedger
 ## Notes: Monthly gold income/expense tracker | Трекер доходов и расходов голды
 ## Author: ivano
-## Version: 1.4.0
+## Version: 1.5.0
 ## SavedVariables: GoldLedgerDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_01
 ## X-Curse-Project-ID: 1483715

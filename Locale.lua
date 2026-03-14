@@ -92,6 +92,16 @@ local defaultStrings = {
     ["EXPORT_BUTTON"]        = "Export",
     ["EXPORT_TITLE"]         = "Export Data (CSV)",
     ["EXPORT_HINT"]          = "Ctrl+A, then Ctrl+C to copy",
+
+    -- Source Breakdown
+    ["BREAKDOWN_BUTTON"]     = "Summary",
+    ["HEADER_BREAKDOWN"]     = "Source Breakdown",
+    ["BREAKDOWN_TODAY"]      = "Today",
+    ["BREAKDOWN_WEEK"]       = "Week",
+    ["BREAKDOWN_MONTH"]      = "Month",
+    ["BREAKDOWN_ALL"]        = "All",
+    ["BREAKDOWN_TOTAL"]      = "Total",
+    ["BREAKDOWN_SOURCE"]     = "Source",
 }
 
 -------------------------------------------------------------------------------
@@ -175,6 +185,16 @@ local ruStrings = {
     ["EXPORT_BUTTON"]        = "Экспорт",
     ["EXPORT_TITLE"]         = "Экспорт данных (CSV)",
     ["EXPORT_HINT"]          = "Ctrl+A, затем Ctrl+C для копирования",
+
+    -- Source Breakdown
+    ["BREAKDOWN_BUTTON"]     = "Сводка",
+    ["HEADER_BREAKDOWN"]     = "По источникам",
+    ["BREAKDOWN_TODAY"]      = "Сегодня",
+    ["BREAKDOWN_WEEK"]       = "Неделя",
+    ["BREAKDOWN_MONTH"]      = "Месяц",
+    ["BREAKDOWN_ALL"]        = "Всё",
+    ["BREAKDOWN_TOTAL"]      = "Итого",
+    ["BREAKDOWN_SOURCE"]     = "Источник",
 }
 
 -------------------------------------------------------------------------------

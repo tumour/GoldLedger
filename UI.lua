@@ -659,6 +659,27 @@ local function CreateMainFrame()
 
     -- === Последние транзакции ===
     MakeSectionHeader(f, L["HEADER_RECENT"], y)
+
+    -- Кнопка "Сводка" / "Summary" справа от заголовка
+    local breakdownBtn = CreateFrame("Button", nil, f, "BackdropTemplate")
+    breakdownBtn:SetSize(80, 20)
+    breakdownBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, y + 2)
+    breakdownBtn:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 8, edgeSize = 8,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 },
+    })
+    breakdownBtn:SetBackdropColor(0.35, 0.28, 0.1, 1)
+    breakdownBtn:SetBackdropBorderColor(0.7, 0.55, 0.15, 1)
+    local breakdownBtnText = breakdownBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    breakdownBtnText:SetPoint("CENTER")
+    breakdownBtnText:SetText(L["BREAKDOWN_BUTTON"])
+    breakdownBtnText:SetTextColor(1, 0.85, 0.3)
+    breakdownBtn:SetScript("OnClick", function() UI:ToggleBreakdownFrame() end)
+    breakdownBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(0.45, 0.38, 0.15, 1) end)
+    breakdownBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(0.35, 0.28, 0.1, 1) end)
+
     y = y - 18
 
     -- Filter buttons (фильтр по источнику, с автопереносом строк)
@@ -1313,8 +1334,242 @@ local function CreateExportFrame()
 end
 
 -------------------------------------------------------------------------------
+-- Source Breakdown Popup
+-------------------------------------------------------------------------------
+local breakdownFrame
+local activeBreakdownPeriod = "today"
+local UpdateBreakdownData -- forward declaration
+
+local function CreateBreakdownFrame()
+    local Data = GoldLedger:GetModule("Data")
+    local Tracker = GoldLedger:GetModule("Tracker")
+
+    local f = CreateFrame("Frame", "GoldLedgerBreakdownFrame", UIParent, "BackdropTemplate")
+    f:SetSize(380, 380)
+    f:SetPoint("CENTER", UIParent, "CENTER", -200, 0)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetFrameStrata("DIALOG")
+    f:SetClampedToScreen(true)
+
+    f:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    f:SetBackdropColor(COLORS.FRAME_BG[1], COLORS.FRAME_BG[2], COLORS.FRAME_BG[3], COLORS.FRAME_BG[4])
+    f:SetBackdropBorderColor(COLORS.BORDER[1], COLORS.BORDER[2], COLORS.BORDER[3], COLORS.BORDER[4])
+
+    -- Title bar
+    local titleBar = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    titleBar:SetHeight(26)
+    titleBar:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
+    titleBar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
+    titleBar:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background" })
+    titleBar:SetBackdropColor(COLORS.TITLE_BG[1], COLORS.TITLE_BG[2], COLORS.TITLE_BG[3], COLORS.TITLE_BG[4])
+
+    local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("LEFT", titleBar, "LEFT", 8, 0)
+    title:SetText("|cffffd700" .. L["HEADER_BREAKDOWN"] .. "|r")
+
+    local closeBtn = CreateFrame("Button", nil, titleBar, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", titleBar, "TOPRIGHT", 2, 2)
+    closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    -- Period buttons
+    local periods = {
+        { key = "today", label = L["BREAKDOWN_TODAY"] },
+        { key = "week",  label = L["BREAKDOWN_WEEK"] },
+        { key = "month", label = L["BREAKDOWN_MONTH"] },
+        { key = "all",   label = L["BREAKDOWN_ALL"] },
+    }
+
+    local periodBtns = {}
+    local btnX = -14
+    for i = #periods, 1, -1 do
+        local info = periods[i]
+        local btn = CreateFrame("Button", nil, f, "BackdropTemplate")
+        btn:SetSize(60, 18)
+        btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", btnX, -36)
+        btn:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 8, edgeSize = 8,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 },
+        })
+        local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        btnText:SetPoint("CENTER")
+        btnText:SetText(info.label)
+        btn.key = info.key
+        periodBtns[info.key] = btn
+        btnX = btnX - 64
+
+        btn:SetScript("OnClick", function()
+            activeBreakdownPeriod = info.key
+            UpdateBreakdownData()
+        end)
+    end
+
+    f.periodBtns = periodBtns
+
+    -- Column headers
+    local colY = -60
+
+    local srcHeader = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    srcHeader:SetPoint("TOPLEFT", f, "TOPLEFT", 18, colY)
+    srcHeader:SetText(L["BREAKDOWN_SOURCE"])
+    srcHeader:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+
+    local incHeader = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    incHeader:SetPoint("TOPRIGHT", f, "TOP", 40, colY)
+    incHeader:SetText(L["HEADER_INCOME"])
+    incHeader:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+    incHeader:SetJustifyH("RIGHT")
+
+    local expHeader = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    expHeader:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, colY)
+    expHeader:SetText(L["HEADER_EXPENSE"])
+    expHeader:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+    expHeader:SetJustifyH("RIGHT")
+
+    MakeSeparator(f, colY - 14)
+
+    -- Source rows
+    local ROW_HEIGHT = 26
+    local rowY = colY - 20
+    f.sourceRows = {}
+
+    for idx, src in ipairs(Data.ALL_SOURCES) do
+        local color = SOURCE_COLORS[src] or SOURCE_COLORS.unknown
+        local localeKey = Tracker:GetSourceLocaleKey(src)
+
+        -- Row background (alternating)
+        if idx % 2 == 0 then
+            local rowBg = f:CreateTexture(nil, "BACKGROUND")
+            rowBg:SetPoint("TOPLEFT", f, "TOPLEFT", 6, rowY + 2)
+            rowBg:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, rowY + 2)
+            rowBg:SetHeight(ROW_HEIGHT)
+            rowBg:SetColorTexture(COLORS.ROW_ALT[1], COLORS.ROW_ALT[2], COLORS.ROW_ALT[3], COLORS.ROW_ALT[4])
+        end
+
+        -- Source name
+        local srcName = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        srcName:SetPoint("TOPLEFT", f, "TOPLEFT", 18, rowY - 4)
+        srcName:SetText(L[localeKey])
+        srcName:SetTextColor(color[1], color[2], color[3])
+
+        -- Income value
+        local incVal = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        incVal:SetPoint("TOPRIGHT", f, "TOP", 40, rowY - 4)
+        incVal:SetJustifyH("RIGHT")
+
+        -- Expense value
+        local expVal = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        expVal:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, rowY - 4)
+        expVal:SetJustifyH("RIGHT")
+
+        f.sourceRows[src] = { income = incVal, expense = expVal }
+        rowY = rowY - ROW_HEIGHT
+    end
+
+    -- Separator before totals
+    MakeSeparator(f, rowY + 2)
+
+    -- Total row
+    local totalLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    totalLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 18, rowY - 8)
+    totalLabel:SetText(L["BREAKDOWN_TOTAL"])
+    totalLabel:SetTextColor(COLORS.HEADER[1], COLORS.HEADER[2], COLORS.HEADER[3])
+
+    f.totalIncome = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    f.totalIncome:SetPoint("TOPRIGHT", f, "TOP", 40, rowY - 8)
+    f.totalIncome:SetJustifyH("RIGHT")
+
+    f.totalExpense = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    f.totalExpense:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, rowY - 8)
+    f.totalExpense:SetJustifyH("RIGHT")
+
+    table.insert(UISpecialFrames, "GoldLedgerBreakdownFrame")
+
+    breakdownFrame = f
+    f:Hide()
+    return f
+end
+
+UpdateBreakdownData = function()
+    if not breakdownFrame or not breakdownFrame:IsShown() then return end
+
+    local Data = GoldLedger:GetModule("Data")
+    local sourceTotals, grandTotals = Data:GetSourceBreakdown(activeBreakdownPeriod)
+
+    -- Update period button colors
+    for key, btn in pairs(breakdownFrame.periodBtns) do
+        if key == activeBreakdownPeriod then
+            btn:SetBackdropColor(0.3, 0.5, 0.3, 0.8)
+        else
+            btn:SetBackdropColor(0.2, 0.2, 0.25, 0.6)
+        end
+        btn:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+    end
+
+    -- Update source rows
+    for src, row in pairs(breakdownFrame.sourceRows) do
+        local data = sourceTotals[src] or { income = 0, expense = 0 }
+
+        if data.income > 0 then
+            row.income:SetText("+" .. GoldFormatter.Short(data.income))
+            row.income:SetTextColor(COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
+        else
+            row.income:SetText("0")
+            row.income:SetTextColor(0.4, 0.4, 0.4)
+        end
+
+        if data.expense > 0 then
+            row.expense:SetText("-" .. GoldFormatter.Short(data.expense))
+            row.expense:SetTextColor(COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+        else
+            row.expense:SetText("0")
+            row.expense:SetTextColor(0.4, 0.4, 0.4)
+        end
+    end
+
+    -- Update totals
+    if grandTotals.income > 0 then
+        breakdownFrame.totalIncome:SetText("+" .. GoldFormatter.Short(grandTotals.income))
+        breakdownFrame.totalIncome:SetTextColor(COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
+    else
+        breakdownFrame.totalIncome:SetText("0")
+        breakdownFrame.totalIncome:SetTextColor(0.4, 0.4, 0.4)
+    end
+
+    if grandTotals.expense > 0 then
+        breakdownFrame.totalExpense:SetText("-" .. GoldFormatter.Short(grandTotals.expense))
+        breakdownFrame.totalExpense:SetTextColor(COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+    else
+        breakdownFrame.totalExpense:SetText("0")
+        breakdownFrame.totalExpense:SetTextColor(0.4, 0.4, 0.4)
+    end
+end
+
+-------------------------------------------------------------------------------
 -- Public API
 -------------------------------------------------------------------------------
+
+function UI:ToggleBreakdownFrame()
+    if not breakdownFrame then
+        CreateBreakdownFrame()
+    end
+    if breakdownFrame:IsShown() then
+        breakdownFrame:Hide()
+    else
+        breakdownFrame:Show()
+        UpdateBreakdownData()
+    end
+end
 
 function UI:ToggleCharsFrame()
     if not charsFrame then

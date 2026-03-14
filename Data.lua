@@ -19,7 +19,7 @@ GoldLedger:RegisterModule("Data", Data)
 -------------------------------------------------------------------------------
 -- Constants
 -------------------------------------------------------------------------------
-local MAX_ENTRIES = 500             -- Макс. записей на персонажа
+local MAX_ENTRIES = 2000            -- Макс. записей на персонажа
 local CLEANUP_AGE_DAYS = 90        -- Удалять записи старше N дней
 local SECONDS_PER_DAY = 86400
 
@@ -353,6 +353,54 @@ function Data:GetAllCharactersSummary()
 
     table.sort(result, function(a, b) return a.monthNet > b.monthNet end)
     return result
+end
+
+-------------------------------------------------------------------------------
+-- Source Breakdown API
+-------------------------------------------------------------------------------
+
+--- Все источники в порядке отображения
+Data.ALL_SOURCES = {"vendor", "repair", "ah", "mail", "quest", "loot", "trade", "unknown"}
+
+--- Возвращает разбивку по источникам за период
+--- @param period string "today"|"week"|"month"|"all"
+--- @return table sourceTotals { [source] = {income=N, expense=N} }
+--- @return table grandTotals {income=N, expense=N}
+function Data:GetSourceBreakdown(period)
+    local charData = self:EnsureCharacterData()
+
+    -- Вычисляем cutoff
+    local cutoff = 0
+    if period == "today" then
+        local d = date("*t")
+        d.hour, d.min, d.sec = 0, 0, 0
+        cutoff = time(d)
+    elseif period == "week" then
+        cutoff = time() - 7 * SECONDS_PER_DAY
+    elseif period == "month" then
+        cutoff = time() - 30 * SECONDS_PER_DAY
+    end
+    -- "all" → cutoff = 0, все записи
+
+    local sourceTotals = {}
+    for _, src in ipairs(self.ALL_SOURCES) do
+        sourceTotals[src] = { income = 0, expense = 0 }
+    end
+
+    local grandTotals = { income = 0, expense = 0 }
+
+    for _, entry in ipairs(charData.entries) do
+        if entry.timestamp >= cutoff then
+            local src = entry.source or "unknown"
+            if not sourceTotals[src] then
+                sourceTotals[src] = { income = 0, expense = 0 }
+            end
+            sourceTotals[src][entry.type] = sourceTotals[src][entry.type] + entry.amount
+            grandTotals[entry.type] = grandTotals[entry.type] + entry.amount
+        end
+    end
+
+    return sourceTotals, grandTotals
 end
 
 -------------------------------------------------------------------------------
