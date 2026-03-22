@@ -31,6 +31,8 @@ local DB_DEFAULTS = {
     settings = {
         minimapPos = 225,
         showMinimap = true,
+        theme = "dashboard_cards",
+        language = nil,  -- nil = auto (game locale)
     },
 }
 
@@ -85,6 +87,12 @@ function Data:OnInitialize()
         GoldLedgerDB = {}
     end
     ApplyDefaults(GoldLedgerDB, DB_DEFAULTS)
+
+    -- Восстановить сохранённый язык
+    local savedLang = GoldLedgerDB.settings.language
+    if savedLang and savedLang ~= "auto" then
+        L:SetLocale(savedLang)
+    end
 
     -- Гарантируем структуру для текущего персонажа
     self:EnsureCharacterData()

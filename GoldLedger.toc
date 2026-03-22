@@ -1,8 +1,8 @@
 ## Interface: 120001
 ## Title: GoldLedger
-## Notes: Monthly gold income/expense tracker | Трекер доходов и расходов голды
+## Notes: Gold income/expense tracker with themes and multi-language support | Трекер голды с темами и мультиязычностью
 ## Author: ivano
-## Version: 1.5.0
+## Version: 2.0.0
 ## SavedVariables: GoldLedgerDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_01
 ## X-Curse-Project-ID: 1483715
@@ -10,5 +10,9 @@
 Locale.lua
 Core.lua
 Data.lua
+Themes\ThemeManager.lua
+Themes\DashboardCards.lua
+Themes\Emerald.lua
+Themes\Amber.lua
 Tracker.lua
 UI.lua

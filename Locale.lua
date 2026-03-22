@@ -102,6 +102,17 @@ local defaultStrings = {
     ["BREAKDOWN_ALL"]        = "All",
     ["BREAKDOWN_TOTAL"]      = "Total",
     ["BREAKDOWN_SOURCE"]     = "Source",
+
+    -- Settings
+    ["SETTINGS_BUTTON"]      = "Settings",
+    ["HEADER_SETTINGS"]      = "Settings",
+    ["SETTINGS_THEME"]       = "Theme",
+    ["SETTINGS_MINIMAP"]     = "Show minimap button",
+    ["SETTINGS_LANGUAGE"]    = "Language",
+    ["SETTINGS_LANG_AUTO"]   = "Auto (game language)",
+    ["SETTINGS_LANG_EN"]     = "English",
+    ["SETTINGS_LANG_RU"]     = "Русский",
+    ["SETTINGS_RESET_SESSION"] = "Reset session",
 }
 
 -------------------------------------------------------------------------------
@@ -195,29 +206,49 @@ local ruStrings = {
     ["BREAKDOWN_ALL"]        = "Всё",
     ["BREAKDOWN_TOTAL"]      = "Итого",
     ["BREAKDOWN_SOURCE"]     = "Источник",
+
+    -- Settings
+    ["SETTINGS_BUTTON"]      = "Настройки",
+    ["HEADER_SETTINGS"]      = "Настройки",
+    ["SETTINGS_THEME"]       = "Тема",
+    ["SETTINGS_MINIMAP"]     = "Показывать кнопку на миникарте",
+    ["SETTINGS_LANGUAGE"]    = "Язык",
+    ["SETTINGS_LANG_AUTO"]   = "Авто (язык игры)",
+    ["SETTINGS_LANG_EN"]     = "English",
+    ["SETTINGS_LANG_RU"]     = "Русский",
+    ["SETTINGS_RESET_SESSION"] = "Сбросить сессию",
 }
 
 -------------------------------------------------------------------------------
 -- Fallback mechanism via __index metamethod
 -------------------------------------------------------------------------------
 local L = {}
+local activeLocale = GetLocale() == "ruRU" and "ruRU" or "enUS"
 
-local clientLocale = GetLocale()
-
-if clientLocale == "ruRU" then
-    -- ruRU: русские строки с fallback на английские
-    setmetatable(L, {
-        __index = function(_, key)
+setmetatable(L, {
+    __index = function(_, key)
+        if activeLocale == "ruRU" then
             return ruStrings[key] or defaultStrings[key] or key
-        end
-    })
-else
-    -- All other locales: English strings with key fallback
-    setmetatable(L, {
-        __index = function(_, key)
+        else
             return defaultStrings[key] or key
         end
-    })
+    end
+})
+
+--- Переключает язык (вызывается из Settings)
+--- @param locale string "ruRU"|"enUS"|nil (nil = авто)
+function L:SetLocale(locale)
+    if locale == nil then
+        activeLocale = GetLocale() == "ruRU" and "ruRU" or "enUS"
+    else
+        activeLocale = locale
+    end
+end
+
+--- Возвращает текущий язык
+--- @return string
+function L:GetLocale()
+    return activeLocale
 end
 
 -------------------------------------------------------------------------------

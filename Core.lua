@@ -139,6 +139,9 @@ SlashCmdList["GOLDLEDGER"] = function(msg)
             GoldLedger:DumpTable("Settings", Data:GetSettings())
             print("|cff888888[GL:Dump]|r Entries: " .. #Data:GetRecentEntries(999))
         end
+    elseif cmd == "settings" or cmd == "config" then
+        local UI = GoldLedger:GetModule("UI")
+        if UI then UI:ToggleSettingsFrame() end
     elseif cmd == "help" then
         print("|cff00ff00GoldLedger:|r " .. L["SLASH_HELP"])
     elseif cmd:sub(1, 4) == "goal" then

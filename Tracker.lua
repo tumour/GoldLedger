@@ -120,6 +120,11 @@ function Tracker:GetSessionStats()
     }
 end
 
+function Tracker:ResetSession()
+    sessionIncome = 0
+    sessionExpense = 0
+end
+
 --- Обрабатывает изменение голды
 local function ProcessGoldChange()
     if not isReady then return end

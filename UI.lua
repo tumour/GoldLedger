@@ -1,11 +1,11 @@
 --[[
     GoldLedger: UI.lua
-    Patterns: Strategy (форматирование), Observer (подписка на изменения)
+    Dashboard Cards layout — горизонтальная компоновка с карточками
 
     Компоненты:
     - Gold Formatter: стратегия форматирования (полный / краткий / цветной)
     - Minimap Button: перетаскиваемая кнопка на краю миникарты
-    - Main Frame: окно с итогами и списком транзакций с источниками
+    - Main Frame: карточки + график + транзакции
 ]]
 
 local ADDON_NAME, ns = ...
@@ -16,7 +16,46 @@ local UI = {}
 GoldLedger:RegisterModule("UI", UI)
 
 -------------------------------------------------------------------------------
--- Custom Goal Input Dialog (вместо StaticPopup — совместимость с AhUI)
+-- Theme helpers (must be before any UI creation functions)
+-------------------------------------------------------------------------------
+
+local function T(key)
+    local Themes = GoldLedger:GetModule("Themes")
+    return Themes:GetColor(key)
+end
+
+local function TC(key)
+    local Themes = GoldLedger:GetModule("Themes")
+    return Themes:C(key)
+end
+
+local function GetSourceColors()
+    local Themes = GoldLedger:GetModule("Themes")
+    return Themes:GetSourceColors()
+end
+
+local function GetBackdrop()
+    local Themes = GoldLedger:GetModule("Themes")
+    return {
+        bgFile = Themes:GetBgTexture(),
+        edgeFile = Themes:GetEdgeTexture(),
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    }
+end
+
+local function GetSmallBackdrop()
+    local Themes = GoldLedger:GetModule("Themes")
+    return {
+        bgFile = Themes:GetBgTexture(),
+        edgeFile = Themes:GetEdgeTexture(),
+        tile = true, tileSize = 8, edgeSize = 8,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 },
+    }
+end
+
+-------------------------------------------------------------------------------
+-- Custom Goal Input Dialog
 -------------------------------------------------------------------------------
 local goalDialog
 
@@ -32,22 +71,15 @@ local function CreateGoalDialog()
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
     f:SetClampedToScreen(true)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    f:SetBackdropColor(0.1, 0.1, 0.12, 0.95)
-    f:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+    f:SetBackdrop(GetBackdrop())
+    f:SetBackdropColor(TC("FRAME_BG"))
+    f:SetBackdropBorderColor(TC("BORDER"))
 
-    -- Заголовок
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOP", f, "TOP", 0, -12)
     title:SetText(L["GOAL_INPUT_TEXT"])
-    title:SetTextColor(1, 0.84, 0)
+    title:SetTextColor(TC("GOLD_TEXT"))
 
-    -- EditBox
     local editBox = CreateFrame("EditBox", "GoldLedgerGoalEditBox", f, "InputBoxTemplate")
     editBox:SetSize(140, 22)
     editBox:SetPoint("TOP", title, "BOTTOM", 0, -10)
@@ -55,25 +87,21 @@ local function CreateGoalDialog()
     editBox:SetNumeric(true)
     editBox:SetMaxLetters(10)
 
-    -- Кнопка OK
     local okBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     okBtn:SetSize(80, 22)
     okBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -4, 10)
     okBtn:SetText(ACCEPT)
 
-    -- Кнопка Отмена
     local cancelBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     cancelBtn:SetSize(80, 22)
     cancelBtn:SetPoint("BOTTOMLEFT", f, "BOTTOM", 4, 10)
     cancelBtn:SetText(CANCEL)
 
-    -- Кнопка Сброс
     local clearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     clearBtn:SetSize(80, 22)
     clearBtn:SetPoint("BOTTOM", f, "BOTTOM", 0, 34)
     clearBtn:SetText(L["GOAL_CLEAR_BTN"])
 
-    -- Логика
     local function AcceptGoal()
         local text = editBox:GetText()
         local amount = tonumber(text)
@@ -167,48 +195,18 @@ end
 
 function GoldFormatter.Colored(copper, entryType)
     local text = GoldFormatter.Full(copper)
+    local Themes = GoldLedger:GetModule("Themes")
+    local c
     if entryType == "income" then
-        return "|cff00ff00+" .. text .. "|r"
+        c = Themes:GetColor("INCOME")
+        return ("|cff%02x%02x%02x+%s|r"):format(c[1]*255, c[2]*255, c[3]*255, text)
     else
-        return "|cffff4444-" .. text .. "|r"
+        c = Themes:GetColor("EXPENSE")
+        return ("|cff%02x%02x%02x-%s|r"):format(c[1]*255, c[2]*255, c[3]*255, text)
     end
 end
 
 UI.GoldFormatter = GoldFormatter
-
--------------------------------------------------------------------------------
--- Source colors: цвет тега по источнику
--------------------------------------------------------------------------------
-local SOURCE_COLORS = {
-    vendor  = { 0.60, 0.80, 1.00 },  -- голубой
-    repair  = { 0.85, 0.55, 0.30 },  -- медный/коричневый
-    ah      = { 1.00, 0.84, 0.00 },  -- золотой
-    mail    = { 0.80, 0.60, 1.00 },  -- фиолетовый
-    quest   = { 1.00, 1.00, 0.40 },  -- жёлтый
-    loot    = { 0.40, 1.00, 0.40 },  -- зелёный
-    trade   = { 1.00, 0.60, 0.40 },  -- оранжевый
-    unknown = { 0.55, 0.55, 0.55 },  -- серый
-}
-
--------------------------------------------------------------------------------
--- Colors
--------------------------------------------------------------------------------
-local COLORS = {
-    FRAME_BG    = { 0.08, 0.08, 0.10, 0.94 },
-    TITLE_BG    = { 0.12, 0.12, 0.15, 1 },
-    BORDER      = { 0.25, 0.25, 0.30, 1 },
-    ROW_ALT     = { 0.14, 0.14, 0.18, 0.5 },
-    SEPARATOR   = { 0.30, 0.30, 0.35, 0.6 },
-    INCOME      = { 0.30, 1.00, 0.30 },
-    EXPENSE     = { 1.00, 0.35, 0.35 },
-    BALANCE_POS = { 1.00, 0.84, 0.00 },
-    BALANCE_NEG = { 1.00, 0.35, 0.35 },
-    LABEL       = { 0.65, 0.65, 0.70 },
-    HEADER      = { 1.00, 0.84, 0.00 },
-    GOAL_BG     = { 0.12, 0.12, 0.16 },
-    GOAL_FILL   = { 0.20, 0.60, 1.00 },
-    GOAL_DONE   = { 0.30, 1.00, 0.30 },
-}
 
 -------------------------------------------------------------------------------
 -- Minimap Button
@@ -236,7 +234,6 @@ local function CreateMinimapButton()
     background:SetSize(24, 24)
     background:SetPoint("CENTER")
 
-    -- Позиционирование на краю миникарты
     local function UpdatePosition(angle)
         local rad = math.rad(angle)
         local radius = (Minimap:GetWidth() / 2) + 10
@@ -247,7 +244,6 @@ local function CreateMinimapButton()
         )
     end
 
-    -- Dragging
     local isDragging = false
     button:RegisterForDrag("LeftButton")
 
@@ -274,7 +270,6 @@ local function CreateMinimapButton()
 
     button:SetScript("OnClick", function() UI:ToggleMainFrame() end)
 
-    -- Tooltip
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine(L["TOOLTIP_TITLE"], 1, 0.84, 0)
@@ -285,21 +280,21 @@ local function CreateMinimapButton()
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine(L["TOOLTIP_TODAY"], 1, 1, 1)
             GameTooltip:AddDoubleLine(L["HEADER_INCOME"], GoldFormatter.Full(today.income),
-                COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3],
-                COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
+                T("LABEL")[1], T("LABEL")[2], T("LABEL")[3],
+                T("INCOME")[1], T("INCOME")[2], T("INCOME")[3])
             GameTooltip:AddDoubleLine(L["HEADER_EXPENSE"], GoldFormatter.Full(today.expense),
-                COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3],
-                COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+                T("LABEL")[1], T("LABEL")[2], T("LABEL")[3],
+                T("EXPENSE")[1], T("EXPENSE")[2], T("EXPENSE")[3])
 
             local month = Data:GetMonthlySummary()
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine(L["TOOLTIP_MONTH"], 1, 1, 1)
             GameTooltip:AddDoubleLine(L["HEADER_INCOME"], GoldFormatter.Full(month.income),
-                COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3],
-                COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
+                T("LABEL")[1], T("LABEL")[2], T("LABEL")[3],
+                T("INCOME")[1], T("INCOME")[2], T("INCOME")[3])
             GameTooltip:AddDoubleLine(L["HEADER_EXPENSE"], GoldFormatter.Full(month.expense),
-                COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3],
-                COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+                T("LABEL")[1], T("LABEL")[2], T("LABEL")[3],
+                T("EXPENSE")[1], T("EXPENSE")[2], T("EXPENSE")[3])
         end
 
         GameTooltip:AddLine(" ")
@@ -324,28 +319,38 @@ local function MakeSeparator(parent, yOffset)
     sep:SetHeight(1)
     sep:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, yOffset)
     sep:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -12, yOffset)
-    sep:SetColorTexture(COLORS.SEPARATOR[1], COLORS.SEPARATOR[2], COLORS.SEPARATOR[3], COLORS.SEPARATOR[4])
+    sep:SetColorTexture(TC("SEPARATOR"))
     return sep
 end
 
-local function MakeSectionHeader(parent, text, yOffset)
-    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yOffset)
-    label:SetText(text)
-    label:SetTextColor(COLORS.HEADER[1], COLORS.HEADER[2], COLORS.HEADER[3])
-    return label
+--- Создаёт карточку (card) внутри родителя
+local function MakeCard(parent, titleText, width, height)
+    local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    card:SetSize(width, height)
+    card:SetBackdrop(GetSmallBackdrop())
+    card:SetBackdropColor(TC("CARD_BG"))
+    card:SetBackdropBorderColor(TC("CARD_BORDER"))
+
+    local cardTitle = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    cardTitle:SetPoint("TOPLEFT", card, "TOPLEFT", 8, -6)
+    cardTitle:SetText(titleText)
+    cardTitle:SetTextColor(TC("CARD_TITLE"))
+
+    card.titleText = cardTitle
+    return card
 end
 
-local function MakeStatRow(parent, labelText, yOffset)
+--- Создаёт строку label + value внутри карточки
+local function MakeCardRow(parent, labelText, yOffset)
     local row = {}
 
     row.label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.label:SetPoint("TOPLEFT", parent, "TOPLEFT", 18, yOffset)
+    row.label:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, yOffset)
     row.label:SetText(labelText)
-    row.label:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+    row.label:SetTextColor(TC("LABEL"))
 
     row.value = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.value:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -14, yOffset)
+    row.value:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -8, yOffset)
     row.value:SetJustifyH("RIGHT")
 
     function row:SetValue(text, r, g, b)
@@ -360,13 +365,13 @@ end
 -- Main Frame
 -------------------------------------------------------------------------------
 local mainFrame
-local FRAME_WIDTH = 380
-local FRAME_HEIGHT = 758
-local activeFilter = "all"   -- Текущий фильтр источника транзакций
-local activeChartPeriod = "7d" -- Текущий период графика: "7d", "30d", "all"
+local FRAME_WIDTH = 720
+local FRAME_HEIGHT = 520
+local activeFilter = "all"
+local activeChartPeriod = "7d"
 local CHART_HEIGHT = 100
-local CHART_PADDING_LEFT = 14
-local CHART_PADDING_RIGHT = 14
+local CHART_PADDING_LEFT = 8
+local CHART_PADDING_RIGHT = 8
 
 -------------------------------------------------------------------------------
 -- Forward declarations
@@ -384,8 +389,8 @@ local function UpdateFilterButtons()
             btn.bg:SetColorTexture(btn.color[1], btn.color[2], btn.color[3], 0.3)
             btn.text:SetTextColor(btn.color[1], btn.color[2], btn.color[3])
         else
-            btn.bg:SetColorTexture(0.1, 0.1, 0.12, 0.5)
-            btn.text:SetTextColor(0.4, 0.4, 0.45)
+            btn.bg:SetColorTexture(TC("FILTER_INACTIVE_BG"))
+            btn.text:SetTextColor(TC("FILTER_INACTIVE_TEXT"))
         end
     end
 end
@@ -402,22 +407,20 @@ local function CreateMainFrame()
     f:SetFrameStrata("DIALOG")
     f:SetClampedToScreen(true)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    f:SetBackdropColor(COLORS.FRAME_BG[1], COLORS.FRAME_BG[2], COLORS.FRAME_BG[3], COLORS.FRAME_BG[4])
-    f:SetBackdropBorderColor(COLORS.BORDER[1], COLORS.BORDER[2], COLORS.BORDER[3], COLORS.BORDER[4])
+    f:SetBackdrop(GetBackdrop())
+    f:SetBackdropColor(TC("FRAME_BG"))
+    f:SetBackdropBorderColor(TC("BORDER"))
 
+    ---------------------------------------------------------------------------
     -- Title bar
+    ---------------------------------------------------------------------------
     local titleBar = CreateFrame("Frame", nil, f, "BackdropTemplate")
     titleBar:SetHeight(26)
     titleBar:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
     titleBar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
-    titleBar:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background" })
-    titleBar:SetBackdropColor(COLORS.TITLE_BG[1], COLORS.TITLE_BG[2], COLORS.TITLE_BG[3], COLORS.TITLE_BG[4])
+    local Themes = GoldLedger:GetModule("Themes")
+    titleBar:SetBackdrop({ bgFile = Themes:GetBgTexture() })
+    titleBar:SetBackdropColor(TC("TITLE_BG"))
 
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", titleBar, "LEFT", 8, 0)
@@ -431,116 +434,225 @@ local function CreateMainFrame()
     local charsBtn = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
     charsBtn:SetSize(76, 18)
     charsBtn:SetPoint("RIGHT", closeBtn, "LEFT", -4, -1)
-    charsBtn:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 8, edgeSize = 8,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    charsBtn:SetBackdropColor(0.15, 0.15, 0.2, 1)
-    charsBtn:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+    charsBtn:SetBackdrop(GetSmallBackdrop())
+    charsBtn:SetBackdropColor(TC("BTN_BG"))
+    charsBtn:SetBackdropBorderColor(TC("BTN_BORDER"))
     local charsBtnText = charsBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     charsBtnText:SetPoint("CENTER")
     charsBtnText:SetText(L["HEADER_CHARACTERS"])
     charsBtn:SetScript("OnClick", function() UI:ToggleCharsFrame() end)
-    charsBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(0.25, 0.25, 0.3, 1) end)
-    charsBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(0.15, 0.15, 0.2, 1) end)
+    charsBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(TC("BTN_BG_HOVER")) end)
+    charsBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(TC("BTN_BG")) end)
 
     -- Кнопка "Экспорт"
     local exportBtn = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
     exportBtn:SetSize(65, 18)
     exportBtn:SetPoint("RIGHT", charsBtn, "LEFT", -4, 0)
-    exportBtn:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 8, edgeSize = 8,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    exportBtn:SetBackdropColor(0.15, 0.15, 0.2, 1)
-    exportBtn:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+    exportBtn:SetBackdrop(GetSmallBackdrop())
+    exportBtn:SetBackdropColor(TC("BTN_BG"))
+    exportBtn:SetBackdropBorderColor(TC("BTN_BORDER"))
     local exportBtnText = exportBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     exportBtnText:SetPoint("CENTER")
     exportBtnText:SetText(L["EXPORT_BUTTON"])
     exportBtn:SetScript("OnClick", function() UI:ShowExportFrame() end)
-    exportBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(0.25, 0.25, 0.3, 1) end)
-    exportBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(0.15, 0.15, 0.2, 1) end)
+    exportBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(TC("BTN_BG_HOVER")) end)
+    exportBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(TC("BTN_BG")) end)
+
+    -- Кнопка "Настройки" (⚙)
+    local settingsBtn = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
+    settingsBtn:SetSize(22, 18)
+    settingsBtn:SetPoint("RIGHT", exportBtn, "LEFT", -4, 0)
+    settingsBtn:SetBackdrop(GetSmallBackdrop())
+    settingsBtn:SetBackdropColor(TC("BTN_BG"))
+    settingsBtn:SetBackdropBorderColor(TC("BTN_BORDER"))
+    local settingsBtnText = settingsBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    settingsBtnText:SetPoint("CENTER")
+    settingsBtnText:SetText("|TInterface\\Buttons\\UI-OptionsButton:14:14|t")
+    settingsBtn:SetScript("OnClick", function() UI:ToggleSettingsFrame() end)
+    settingsBtn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(TC("BTN_BG_HOVER"))
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine(L["SETTINGS_BUTTON"], 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    settingsBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(TC("BTN_BG"))
+        GameTooltip:Hide()
+    end)
 
     table.insert(UISpecialFrames, "GoldLedgerMainFrame")
 
     ---------------------------------------------------------------------------
-    -- Layout: Sections
+    -- Row 1: Stat cards (On Hand, Today, Session, Month)
     ---------------------------------------------------------------------------
-    local y = -38
+    local CARD_W = 166
+    local CARD_H = 80
+    local CARD_GAP = 8
+    local cardsY = -38
 
-    -- === На руках (текущая голда) ===
-    local onHandLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    onHandLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 14, y)
-    onHandLabel:SetText(L["HEADER_ON_HAND"])
-    onHandLabel:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+    -- On Hand card
+    local cardOnHand = MakeCard(f, L["HEADER_ON_HAND"], CARD_W, CARD_H)
+    cardOnHand:SetPoint("TOPLEFT", f, "TOPLEFT", 10, cardsY)
 
-    f.onHandValue = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    f.onHandValue:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, y)
-    f.onHandValue:SetJustifyH("RIGHT")
-    f.onHandValue:SetTextColor(1, 0.84, 0) -- золотой цвет
+    f.onHandValue = cardOnHand:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    f.onHandValue:SetPoint("TOP", cardOnHand, "TOP", 0, -24)
+    f.onHandValue:SetJustifyH("CENTER")
+    f.onHandValue:SetTextColor(TC("GOLD_TEXT"))
 
-    y = y - 18
-    MakeSeparator(f, y) ; y = y - 10
+    -- Today card
+    local cardToday = MakeCard(f, L["HEADER_TODAY"], CARD_W, CARD_H)
+    cardToday:SetPoint("LEFT", cardOnHand, "RIGHT", CARD_GAP, 0)
 
-    -- === Сегодня ===
-    MakeSectionHeader(f, L["HEADER_TODAY"], y)
-    y = y - 18
-    f.todayIncome  = MakeStatRow(f, L["HEADER_INCOME"], y)   ; y = y - 16
-    f.todayExpense = MakeStatRow(f, L["HEADER_EXPENSE"], y)   ; y = y - 16
-    f.todayBalance = MakeStatRow(f, L["HEADER_BALANCE"], y)   ; y = y - 10
-    MakeSeparator(f, y) ; y = y - 10
+    f.todayIncome  = MakeCardRow(cardToday, L["HEADER_INCOME"], -22)
+    f.todayExpense = MakeCardRow(cardToday, L["HEADER_EXPENSE"], -36)
+    f.todayBalance = MakeCardRow(cardToday, L["HEADER_BALANCE"], -52)
 
-    -- === Сессия ===
-    MakeSectionHeader(f, L["HEADER_SESSION"], y)
-    y = y - 18
-    f.sessionIncome  = MakeStatRow(f, L["HEADER_INCOME"], y)   ; y = y - 16
-    f.sessionExpense = MakeStatRow(f, L["HEADER_EXPENSE"], y)   ; y = y - 16
-    f.sessionNet     = MakeStatRow(f, L["HEADER_NET"], y)       ; y = y - 10
-    MakeSeparator(f, y) ; y = y - 10
+    -- Session card
+    local cardSession = MakeCard(f, L["HEADER_SESSION"], CARD_W, CARD_H)
+    cardSession:SetPoint("LEFT", cardToday, "RIGHT", CARD_GAP, 0)
 
-    -- === Этот месяц ===
-    MakeSectionHeader(f, L["HEADER_MONTH"], y)
-    y = y - 18
-    f.monthIncome  = MakeStatRow(f, L["HEADER_INCOME"], y)   ; y = y - 16
-    f.monthExpense = MakeStatRow(f, L["HEADER_EXPENSE"], y)   ; y = y - 16
-    f.monthBalance = MakeStatRow(f, L["HEADER_BALANCE"], y)   ; y = y - 10
-    MakeSeparator(f, y) ; y = y - 10
+    f.sessionIncome  = MakeCardRow(cardSession, L["HEADER_INCOME"], -22)
+    f.sessionExpense = MakeCardRow(cardSession, L["HEADER_EXPENSE"], -36)
+    f.sessionNet     = MakeCardRow(cardSession, L["HEADER_NET"], -52)
 
-    -- === Цель накопления ===
-    MakeSectionHeader(f, L["HEADER_GOAL"], y)
-    y = y - 16
+    -- Month card
+    local cardMonth = MakeCard(f, L["HEADER_MONTH"], CARD_W, CARD_H)
+    cardMonth:SetPoint("LEFT", cardSession, "RIGHT", CARD_GAP, 0)
 
-    f.goalBarBg = f:CreateTexture(nil, "ARTWORK")
-    f.goalBarBg:SetHeight(14)
-    f.goalBarBg:SetPoint("TOPLEFT", f, "TOPLEFT", 18, y)
-    f.goalBarBg:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, y)
-    f.goalBarBg:SetColorTexture(COLORS.GOAL_BG[1], COLORS.GOAL_BG[2], COLORS.GOAL_BG[3], 1)
+    f.monthIncome  = MakeCardRow(cardMonth, L["HEADER_INCOME"], -22)
+    f.monthExpense = MakeCardRow(cardMonth, L["HEADER_EXPENSE"], -36)
+    f.monthBalance = MakeCardRow(cardMonth, L["HEADER_BALANCE"], -52)
 
-    f.goalBarFill = f:CreateTexture(nil, "ARTWORK", nil, 1)
-    f.goalBarFill:SetHeight(14)
+    ---------------------------------------------------------------------------
+    -- Row 2: Chart (left) + Goal (right)
+    ---------------------------------------------------------------------------
+    local row2Y = cardsY - CARD_H - CARD_GAP
+    local CHART_CARD_W = 460
+    local GOAL_CARD_W = FRAME_WIDTH - CHART_CARD_W - 10 - 10 - CARD_GAP  -- remaining width
+
+    -- Chart card
+    local chartCard = MakeCard(f, L["HEADER_CHART"], CHART_CARD_W, 160)
+    chartCard:SetPoint("TOPLEFT", f, "TOPLEFT", 10, row2Y)
+
+    -- Chart period buttons (inside chart card)
+    local CHART_PERIODS = {
+        { key = "7d",  label = L["CHART_7D"] },
+        { key = "30d", label = L["CHART_30D"] },
+        { key = "all", label = L["CHART_ALL"] },
+    }
+    f.chartPeriodButtons = {}
+
+    local periodX = -6
+    for i = #CHART_PERIODS, 1, -1 do
+        local pInfo = CHART_PERIODS[i]
+        local btn = CreateFrame("Button", nil, chartCard)
+        btn:SetNormalFontObject("GameFontHighlightSmall")
+        btn:SetText(pInfo.label)
+        btn:SetSize(btn:GetFontString():GetStringWidth() + 12, 16)
+        btn:SetPoint("TOPRIGHT", chartCard, "TOPRIGHT", periodX, -5)
+        periodX = periodX - btn:GetWidth() - 4
+
+        local btnBg = btn:CreateTexture(nil, "BACKGROUND")
+        btnBg:SetAllPoints()
+        btnBg:SetColorTexture(TC("BTN_INACTIVE"))
+        btn.bg = btnBg
+
+        btn:SetScript("OnClick", function()
+            activeChartPeriod = pInfo.key
+            for _, b in ipairs(f.chartPeriodButtons) do
+                if b.periodKey == activeChartPeriod then
+                    b.bg:SetColorTexture(TC("BTN_ACTIVE"))
+                else
+                    b.bg:SetColorTexture(TC("BTN_INACTIVE"))
+                end
+            end
+            UpdateChart()
+        end)
+
+        btn.periodKey = pInfo.key
+        if pInfo.key == activeChartPeriod then
+            btnBg:SetColorTexture(TC("BTN_ACTIVE"))
+        end
+
+        table.insert(f.chartPeriodButtons, btn)
+    end
+
+    -- Legend (inside chart card)
+    local legendIncome = chartCard:CreateTexture(nil, "ARTWORK")
+    legendIncome:SetSize(8, 8)
+    legendIncome:SetPoint("TOPLEFT", chartCard, "TOPLEFT", 8, -22)
+    legendIncome:SetColorTexture(T("INCOME")[1], T("INCOME")[2], T("INCOME")[3], 0.9)
+
+    local legendIncomeText = chartCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    legendIncomeText:SetPoint("LEFT", legendIncome, "RIGHT", 3, 0)
+    legendIncomeText:SetText(L["HEADER_INCOME"])
+    legendIncomeText:SetTextColor(TC("LABEL"))
+
+    local legendExpense = chartCard:CreateTexture(nil, "ARTWORK")
+    legendExpense:SetSize(8, 8)
+    legendExpense:SetPoint("LEFT", legendIncomeText, "RIGHT", 8, 0)
+    legendExpense:SetColorTexture(T("EXPENSE")[1], T("EXPENSE")[2], T("EXPENSE")[3], 0.9)
+
+    local legendExpenseText = chartCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    legendExpenseText:SetPoint("LEFT", legendExpense, "RIGHT", 3, 0)
+    legendExpenseText:SetText(L["HEADER_EXPENSE"])
+    legendExpenseText:SetTextColor(TC("LABEL"))
+
+    -- Chart container (inside chart card)
+    local chartContainer = CreateFrame("Frame", nil, chartCard)
+    chartContainer:SetHeight(CHART_HEIGHT)
+    chartContainer:SetPoint("TOPLEFT", chartCard, "TOPLEFT", CHART_PADDING_LEFT, -34)
+    chartContainer:SetPoint("TOPRIGHT", chartCard, "TOPRIGHT", -CHART_PADDING_RIGHT, -34)
+
+    local chartBg = chartContainer:CreateTexture(nil, "BACKGROUND")
+    chartBg:SetAllPoints()
+    chartBg:SetColorTexture(TC("CHART_BG"))
+
+    local guide = chartContainer:CreateTexture(nil, "ARTWORK")
+    guide:SetHeight(1)
+    guide:SetPoint("BOTTOMLEFT", chartContainer, "BOTTOMLEFT", 0, CHART_HEIGHT * 0.5)
+    guide:SetPoint("BOTTOMRIGHT", chartContainer, "BOTTOMRIGHT", 0, CHART_HEIGHT * 0.5)
+    guide:SetColorTexture(TC("CHART_GUIDE"))
+
+    f.chartMaxLabel = chartContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    f.chartMaxLabel:SetPoint("TOPRIGHT", chartContainer, "TOPRIGHT", -2, -2)
+    f.chartMaxLabel:SetTextColor(TC("TEXT_DIM"))
+
+    f.chartDayLabels = {}
+    f.chartContainer = chartContainer
+    f.chartBars = {}
+    f.chartHitFrames = {}
+
+    -- Goal card (right of chart)
+    local goalCard = MakeCard(f, L["HEADER_GOAL"], GOAL_CARD_W, 160)
+    goalCard:SetPoint("LEFT", chartCard, "RIGHT", CARD_GAP, 0)
+
+    -- Goal progress bar
+    f.goalBarBg = goalCard:CreateTexture(nil, "ARTWORK")
+    f.goalBarBg:SetHeight(20)
+    f.goalBarBg:SetPoint("TOPLEFT", goalCard, "TOPLEFT", 10, -30)
+    f.goalBarBg:SetPoint("TOPRIGHT", goalCard, "TOPRIGHT", -10, -30)
+    f.goalBarBg:SetColorTexture(TC("GOAL_BG"))
+
+    f.goalBarFill = goalCard:CreateTexture(nil, "ARTWORK", nil, 1)
+    f.goalBarFill:SetHeight(20)
     f.goalBarFill:SetPoint("TOPLEFT", f.goalBarBg, "TOPLEFT", 0, 0)
     f.goalBarFill:SetWidth(1)
-    f.goalBarFill:SetColorTexture(COLORS.GOAL_FILL[1], COLORS.GOAL_FILL[2], COLORS.GOAL_FILL[3], 0.8)
+    f.goalBarFill:SetColorTexture(TC("GOAL_FILL"))
 
-    f.goalText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    f.goalText = goalCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     f.goalText:SetPoint("CENTER", f.goalBarBg, "CENTER", 0, 0)
-    f.goalText:SetTextColor(1, 1, 1)
+    f.goalText:SetTextColor(TC("TEXT_WHITE"))
 
-    f.goalEta = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.goalEta:SetPoint("TOPLEFT", f.goalBarBg, "BOTTOMLEFT", 0, -2)
-    f.goalEta:SetTextColor(0.5, 0.5, 0.55)
+    f.goalEta = goalCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    f.goalEta:SetPoint("TOP", f.goalBarBg, "BOTTOM", 0, -4)
+    f.goalEta:SetTextColor(TC("TEXT_DIM"))
 
-    -- Кликабельная зона поверх бара: нажать → ввод цели
-    local goalClickArea = CreateFrame("Button", nil, f)
+    -- Goal click area
+    local goalClickArea = CreateFrame("Button", nil, goalCard)
     goalClickArea:SetPoint("TOPLEFT", f.goalBarBg, "TOPLEFT", 0, 0)
     goalClickArea:SetPoint("BOTTOMRIGHT", f.goalBarBg, "BOTTOMRIGHT", 0, 0)
-    goalClickArea:SetScript("OnClick", function()
-        ShowGoalDialog()
-    end)
+    goalClickArea:SetScript("OnClick", function() ShowGoalDialog() end)
     goalClickArea:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine(L["HEADER_GOAL"], 1, 0.84, 0)
@@ -549,140 +661,31 @@ local function CreateMainFrame()
     end)
     goalClickArea:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    y = y - 32
-    MakeSeparator(f, y) ; y = y - 10
+    ---------------------------------------------------------------------------
+    -- Row 3: Recent Transactions
+    ---------------------------------------------------------------------------
+    local row3Y = row2Y - 160 - CARD_GAP
 
-    -- === График по дням ===
-    -- Заголовок
-    MakeSectionHeader(f, L["HEADER_CHART"], y)
+    -- Transactions card (full width)
+    local txCard = MakeCard(f, L["HEADER_RECENT"], FRAME_WIDTH - 20, FRAME_HEIGHT - math.abs(row3Y) - 14)
+    txCard:SetPoint("TOPLEFT", f, "TOPLEFT", 10, row3Y)
 
-    -- Кнопки переключения периода (справа от заголовка)
-    local CHART_PERIODS = {
-        { key = "7d",  label = L["CHART_7D"] },
-        { key = "30d", label = L["CHART_30D"] },
-        { key = "all", label = L["CHART_ALL"] },
-    }
-    f.chartPeriodButtons = {}
-
-    local periodX = -14
-    for i = #CHART_PERIODS, 1, -1 do
-        local pInfo = CHART_PERIODS[i]
-        local btn = CreateFrame("Button", nil, f)
-        btn:SetNormalFontObject("GameFontHighlightSmall")
-        btn:SetText(pInfo.label)
-        btn:SetSize(btn:GetFontString():GetStringWidth() + 12, 16)
-        btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", periodX, y - 1)
-        periodX = periodX - btn:GetWidth() - 4
-
-        local btnBg = btn:CreateTexture(nil, "BACKGROUND")
-        btnBg:SetAllPoints()
-        btnBg:SetColorTexture(0.2, 0.2, 0.25, 0.6)
-        btn.bg = btnBg
-
-        btn:SetScript("OnClick", function()
-            activeChartPeriod = pInfo.key
-            -- Обновить подсветку кнопок
-            for _, b in ipairs(f.chartPeriodButtons) do
-                if b.periodKey == activeChartPeriod then
-                    b.bg:SetColorTexture(0.3, 0.5, 0.3, 0.8)
-                else
-                    b.bg:SetColorTexture(0.2, 0.2, 0.25, 0.6)
-                end
-            end
-            UpdateChart()
-        end)
-
-        btn.periodKey = pInfo.key
-        -- Начальная подсветка
-        if pInfo.key == activeChartPeriod then
-            btnBg:SetColorTexture(0.3, 0.5, 0.3, 0.8)
-        end
-
-        table.insert(f.chartPeriodButtons, btn)
-    end
-
-    y = y - 18
-
-    -- Легенда (под заголовком, слева)
-    local legendIncome = f:CreateTexture(nil, "ARTWORK")
-    legendIncome:SetSize(8, 8)
-    legendIncome:SetPoint("TOPLEFT", f, "TOPLEFT", 14, y - 2)
-    legendIncome:SetColorTexture(COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3], 0.9)
-
-    local legendIncomeText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    legendIncomeText:SetPoint("LEFT", legendIncome, "RIGHT", 3, 0)
-    legendIncomeText:SetText(L["HEADER_INCOME"])
-    legendIncomeText:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
-
-    local legendExpense = f:CreateTexture(nil, "ARTWORK")
-    legendExpense:SetSize(8, 8)
-    legendExpense:SetPoint("LEFT", legendIncomeText, "RIGHT", 8, 0)
-    legendExpense:SetColorTexture(COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3], 0.9)
-
-    local legendExpenseText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    legendExpenseText:SetPoint("LEFT", legendExpense, "RIGHT", 3, 0)
-    legendExpenseText:SetText(L["HEADER_EXPENSE"])
-    legendExpenseText:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
-
-    y = y - 14
-
-    -- Контейнер графика (отступ сверху для метки макс.)
-    local chartContainer = CreateFrame("Frame", nil, f)
-    chartContainer:SetHeight(CHART_HEIGHT)
-    chartContainer:SetPoint("TOPLEFT", f, "TOPLEFT", CHART_PADDING_LEFT, y)
-    chartContainer:SetPoint("TOPRIGHT", f, "TOPRIGHT", -CHART_PADDING_RIGHT, y)
-
-    -- Фон графика
-    local chartBg = chartContainer:CreateTexture(nil, "BACKGROUND")
-    chartBg:SetAllPoints()
-    chartBg:SetColorTexture(0.04, 0.04, 0.06, 0.7)
-
-    -- Горизонтальные направляющие (50%)
-    local guide = chartContainer:CreateTexture(nil, "ARTWORK")
-    guide:SetHeight(1)
-    guide:SetPoint("BOTTOMLEFT", chartContainer, "BOTTOMLEFT", 0, CHART_HEIGHT * 0.5)
-    guide:SetPoint("BOTTOMRIGHT", chartContainer, "BOTTOMRIGHT", 0, CHART_HEIGHT * 0.5)
-    guide:SetColorTexture(0.2, 0.2, 0.25, 0.4)
-
-    -- Метка максимума (правый верхний угол графика)
-    f.chartMaxLabel = chartContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.chartMaxLabel:SetPoint("TOPRIGHT", chartContainer, "TOPRIGHT", -2, -2)
-    f.chartMaxLabel:SetTextColor(0.5, 0.5, 0.5)
-
-    f.chartDayLabels = {}
-    f.chartContainer = chartContainer
-    f.chartBars = {}
-    f.chartHitFrames = {}
-
-    y = y - CHART_HEIGHT - 14  -- место для подписей дней
-    MakeSeparator(f, y) ; y = y - 10
-
-    -- === Последние транзакции ===
-    MakeSectionHeader(f, L["HEADER_RECENT"], y)
-
-    -- Кнопка "Сводка" / "Summary" справа от заголовка
-    local breakdownBtn = CreateFrame("Button", nil, f, "BackdropTemplate")
+    -- Кнопка "Сводка" справа от заголовка
+    local breakdownBtn = CreateFrame("Button", nil, txCard, "BackdropTemplate")
     breakdownBtn:SetSize(80, 20)
-    breakdownBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, y + 2)
-    breakdownBtn:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 8, edgeSize = 8,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    breakdownBtn:SetBackdropColor(0.35, 0.28, 0.1, 1)
-    breakdownBtn:SetBackdropBorderColor(0.7, 0.55, 0.15, 1)
+    breakdownBtn:SetPoint("TOPRIGHT", txCard, "TOPRIGHT", -8, -4)
+    breakdownBtn:SetBackdrop(GetSmallBackdrop())
+    breakdownBtn:SetBackdropColor(TC("ACCENT_BTN_BG"))
+    breakdownBtn:SetBackdropBorderColor(TC("ACCENT_BTN_BORDER"))
     local breakdownBtnText = breakdownBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     breakdownBtnText:SetPoint("CENTER")
     breakdownBtnText:SetText(L["BREAKDOWN_BUTTON"])
-    breakdownBtnText:SetTextColor(1, 0.85, 0.3)
+    breakdownBtnText:SetTextColor(TC("ACCENT_BTN_TEXT"))
     breakdownBtn:SetScript("OnClick", function() UI:ToggleBreakdownFrame() end)
-    breakdownBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(0.45, 0.38, 0.15, 1) end)
-    breakdownBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(0.35, 0.28, 0.1, 1) end)
+    breakdownBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(TC("ACCENT_BTN_BG_HOVER")) end)
+    breakdownBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(TC("ACCENT_BTN_BG")) end)
 
-    y = y - 18
-
-    -- Filter buttons (фильтр по источнику, с автопереносом строк)
+    -- Filter buttons
     f.filterButtons = {}
     local FILTER_SOURCES = {
         { key = "all",     localeKey = "FILTER_ALL" },
@@ -696,12 +699,12 @@ local function CreateMainFrame()
         { key = "unknown", localeKey = "SRC_UNKNOWN" },
     }
 
+    local filterY = -22
     local xOff = 0
-    local rowY = y
-    local maxRowWidth = FRAME_WIDTH - 28  -- 14px отступ с каждой стороны
+    local maxRowWidth = FRAME_WIDTH - 48
 
     for _, info in ipairs(FILTER_SOURCES) do
-        local btn = CreateFrame("Button", nil, f)
+        local btn = CreateFrame("Button", nil, txCard)
         btn:SetHeight(18)
 
         local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -712,13 +715,12 @@ local function CreateMainFrame()
         if textW < 5 then textW = 24 end
         btn:SetWidth(textW + 12)
 
-        -- Перенос на новую строку если не влезает
         if xOff + btn:GetWidth() > maxRowWidth and xOff > 0 then
             xOff = 0
-            rowY = rowY - 20
+            filterY = filterY - 20
         end
 
-        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 14 + xOff, rowY)
+        btn:SetPoint("TOPLEFT", txCard, "TOPLEFT", 10 + xOff, filterY)
 
         local bg = btn:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
@@ -726,7 +728,8 @@ local function CreateMainFrame()
         btn.text = btnText
         btn.bg = bg
         btn.key = info.key
-        btn.color = SOURCE_COLORS[info.key] or { 1, 1, 1 }
+        local sc = GetSourceColors()
+        btn.color = sc[info.key] or { 1, 1, 1 }
 
         btn:SetScript("OnClick", function()
             activeFilter = info.key
@@ -738,21 +741,20 @@ local function CreateMainFrame()
         xOff = xOff + btn:GetWidth() + 3
     end
 
-    y = rowY - 22
+    local scrollY = filterY - 22
 
-    -- Scroll frame
-    local scrollFrame = CreateFrame("ScrollFrame", "GoldLedgerScrollFrame", f, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 6, y)
-    scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 8)
+    -- Scroll frame for transactions
+    local scrollFrame = CreateFrame("ScrollFrame", "GoldLedgerScrollFrame", txCard, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", txCard, "TOPLEFT", 4, scrollY)
+    scrollFrame:SetPoint("BOTTOMRIGHT", txCard, "BOTTOMRIGHT", -24, 4)
 
-    -- Фон для scroll-области
-    local scrollBg = f:CreateTexture(nil, "BACKGROUND", nil, -1)
+    local scrollBg = txCard:CreateTexture(nil, "BACKGROUND", nil, -1)
     scrollBg:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", -2, 2)
     scrollBg:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 20, -2)
-    scrollBg:SetColorTexture(0.05, 0.05, 0.07, 0.6)
+    scrollBg:SetColorTexture(TC("SCROLL_BG"))
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetWidth(FRAME_WIDTH - 40)
+    scrollChild:SetWidth(FRAME_WIDTH - 60)
     scrollChild:SetHeight(1)
     scrollFrame:SetScrollChild(scrollChild)
 
@@ -769,7 +771,7 @@ local function CreateMainFrame()
 end
 
 -------------------------------------------------------------------------------
--- Transaction rows with source tags
+-- Transaction rows
 -------------------------------------------------------------------------------
 local ROW_HEIGHT = 20
 local MAX_VISIBLE = 50
@@ -780,41 +782,36 @@ local function CreateEntryRow(parent, index)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -((index - 1) * ROW_HEIGHT))
     row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -((index - 1) * ROW_HEIGHT))
 
-    -- Чередующийся фон
     if index % 2 == 0 then
         local bg = row:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
-        bg:SetColorTexture(COLORS.ROW_ALT[1], COLORS.ROW_ALT[2], COLORS.ROW_ALT[3], COLORS.ROW_ALT[4])
+        bg:SetColorTexture(TC("ROW_ALT"))
     end
 
-    -- Время (слева)
     row.timeText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.timeText:SetPoint("LEFT", row, "LEFT", 4, 0)
     row.timeText:SetWidth(42)
     row.timeText:SetJustifyH("LEFT")
-    row.timeText:SetTextColor(0.6, 0.6, 0.6)
+    row.timeText:SetTextColor(TC("TEXT_TIME"))
 
-    -- Тег источника (после времени)
     row.sourceTag = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.sourceTag:SetPoint("LEFT", row.timeText, "RIGHT", 4, 0)
     row.sourceTag:SetWidth(55)
     row.sourceTag:SetJustifyH("LEFT")
 
-    -- Сумма (справа)
     row.amountText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.amountText:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     row.amountText:SetJustifyH("RIGHT")
 
-    --- Обновляет строку данными
     function row:SetEntry(entry)
         self.timeText:SetText(date(L["TIME_FORMAT"], entry.timestamp))
         self.amountText:SetText(GoldFormatter.Colored(entry.amount, entry.type))
 
-        -- Источник с цветом
         local source = entry.source or "unknown"
         local Tracker = GoldLedger:GetModule("Tracker")
         local localeKey = Tracker and Tracker:GetSourceLocaleKey(source) or "SRC_UNKNOWN"
-        local color = SOURCE_COLORS[source] or SOURCE_COLORS.unknown
+        local sc = GetSourceColors()
+        local color = sc[source] or sc.unknown
         self.sourceTag:SetText(L[localeKey])
         self.sourceTag:SetTextColor(color[1], color[2], color[3])
     end
@@ -831,7 +828,6 @@ UpdateEntryRows = function()
     local allEntries = Data:GetRecentEntries(MAX_VISIBLE)
     local scrollChild = mainFrame.scrollChild
 
-    -- Фильтруем по источнику
     local entries = {}
     if activeFilter == "all" then
         entries = allEntries
@@ -875,63 +871,55 @@ UpdateChart = function()
     local container = mainFrame.chartContainer
     local chartWidth = container:GetWidth()
 
-    -- Если ширина ещё 0 (первый кадр), отложим
     if chartWidth < 10 then return end
 
     local barGroupWidth = chartWidth / totalBars
-    local barWidth = math.max(2, (barGroupWidth - 2) / 2) -- 2 бара + gap
+    local barWidth = math.max(2, (barGroupWidth - 2) / 2)
     local todayKey = date("%Y-%m-%d")
 
-    -- Метка максимума
     mainFrame.chartMaxLabel:SetText(GoldFormatter.Short(maxVal))
 
-    -- Шаг подписей: показываем ~6 подписей
     local labelStep = math.max(1, math.ceil(totalBars / 6))
 
-    -- Скрыть старые подписи
     for _, lbl in pairs(mainFrame.chartDayLabels) do
         lbl:Hide()
     end
 
     for i, dayData in ipairs(chartData) do
-        -- Создаём бары если нужно
         if not mainFrame.chartBars[i] then
             local incBar = container:CreateTexture(nil, "ARTWORK")
             local expBar = container:CreateTexture(nil, "ARTWORK")
             mainFrame.chartBars[i] = { income = incBar, expense = expBar }
         end
 
-        -- Подписи дней
         if not mainFrame.chartDayLabels[i] then
             local dayLabel = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            dayLabel:SetTextColor(0.45, 0.45, 0.50)
+            dayLabel:SetTextColor(TC("DAY_LABEL"))
             mainFrame.chartDayLabels[i] = dayLabel
         end
 
         local bars = mainFrame.chartBars[i]
         local xOffset = (i - 1) * barGroupWidth
 
-        -- Income bar (левый)
         local incHeight = dayData.income > 0 and math.max(2, (dayData.income / maxVal) * CHART_HEIGHT) or 0
         bars.income:ClearAllPoints()
         bars.income:SetSize(barWidth, incHeight)
         bars.income:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", xOffset + 1, 0)
         bars.income:SetShown(dayData.income > 0)
 
-        -- Expense bar (правый)
         local expHeight = dayData.expense > 0 and math.max(2, (dayData.expense / maxVal) * CHART_HEIGHT) or 0
         bars.expense:ClearAllPoints()
         bars.expense:SetSize(barWidth, expHeight)
         bars.expense:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", xOffset + 1 + barWidth, 0)
         bars.expense:SetShown(dayData.expense > 0)
 
-        -- Подсветка: сегодня яркий, остальные приглушённые
         local isToday = dayData.dateKey == todayKey
         local alpha = isToday and 1 or 0.5
-        bars.income:SetColorTexture(COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3], alpha)
-        bars.expense:SetColorTexture(COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3], alpha)
+        local inc = T("INCOME")
+        local exp = T("EXPENSE")
+        bars.income:SetColorTexture(inc[1], inc[2], inc[3], alpha)
+        bars.expense:SetColorTexture(exp[1], exp[2], exp[3], alpha)
 
-        -- Подпись дня: показывать 1 и каждый labelStep-й
         local lbl = mainFrame.chartDayLabels[i]
         if i == 1 or i % labelStep == 0 then
             lbl:ClearAllPoints()
@@ -942,7 +930,6 @@ UpdateChart = function()
             lbl:Hide()
         end
 
-        -- Hit frame для tooltip
         if not mainFrame.chartHitFrames[i] then
             local hit = CreateFrame("Frame", nil, container)
             hit:EnableMouse(true)
@@ -950,10 +937,10 @@ UpdateChart = function()
                 GameTooltip:SetOwner(self, "ANCHOR_TOP")
                 GameTooltip:AddLine(self.tipDate or "", 1, 1, 1)
                 if self.tipIncome and self.tipIncome > 0 then
-                    GameTooltip:AddLine(L["HEADER_INCOME"] .. ": " .. GoldFormatter.Full(self.tipIncome), COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
+                    GameTooltip:AddLine(L["HEADER_INCOME"] .. ": " .. GoldFormatter.Full(self.tipIncome), TC("INCOME"))
                 end
                 if self.tipExpense and self.tipExpense > 0 then
-                    GameTooltip:AddLine(L["HEADER_EXPENSE"] .. ": " .. GoldFormatter.Full(self.tipExpense), COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+                    GameTooltip:AddLine(L["HEADER_EXPENSE"] .. ": " .. GoldFormatter.Full(self.tipExpense), TC("EXPENSE"))
                 end
                 GameTooltip:Show()
             end)
@@ -971,7 +958,6 @@ UpdateChart = function()
         hit:Show()
     end
 
-    -- Скрыть лишние бары и hit frames
     for i = #chartData + 1, #mainFrame.chartBars do
         mainFrame.chartBars[i].income:Hide()
         mainFrame.chartBars[i].expense:Hide()
@@ -996,7 +982,7 @@ local function UpdateGoal()
         mainFrame.goalBarFill:SetWidth(1)
         mainFrame.goalBarFill:Hide()
         mainFrame.goalText:SetText(L["GOAL_NONE"])
-        mainFrame.goalText:SetTextColor(0.5, 0.5, 0.55)
+        mainFrame.goalText:SetTextColor(TC("TEXT_DIM"))
         mainFrame.goalEta:SetText("")
         return
     end
@@ -1009,19 +995,17 @@ local function UpdateGoal()
     mainFrame.goalBarFill:Show()
 
     if goalInfo.progress >= 1 then
-        mainFrame.goalBarFill:SetColorTexture(
-            COLORS.GOAL_DONE[1], COLORS.GOAL_DONE[2], COLORS.GOAL_DONE[3], 0.8)
+        mainFrame.goalBarFill:SetColorTexture(TC("GOAL_DONE"))
         mainFrame.goalText:SetText(L["GOAL_REACHED"])
-        mainFrame.goalText:SetTextColor(0.3, 1.0, 0.3)
+        mainFrame.goalText:SetTextColor(TC("GOAL_DONE"))
         mainFrame.goalEta:SetText("")
     else
-        mainFrame.goalBarFill:SetColorTexture(
-            COLORS.GOAL_FILL[1], COLORS.GOAL_FILL[2], COLORS.GOAL_FILL[3], 0.8)
+        mainFrame.goalBarFill:SetColorTexture(TC("GOAL_FILL"))
         local pct = math.floor(goalInfo.progress * 100)
         mainFrame.goalText:SetText(
             GoldFormatter.Short(goalInfo.current) .. " / " ..
             GoldFormatter.Short(goalInfo.goal) .. " (" .. pct .. "%)")
-        mainFrame.goalText:SetTextColor(1, 1, 1)
+        mainFrame.goalText:SetTextColor(TC("TEXT_WHITE"))
 
         if goalInfo.estDays then
             mainFrame.goalEta:SetText(L["GOAL_REMAINING"]:format(goalInfo.estDays))
@@ -1040,32 +1024,28 @@ local function UpdateSummaries()
     local Data = GoldLedger:GetModule("Data")
     if not Data then return end
 
-    -- On Hand (текущая голда)
+    -- On Hand
     local currentGold = GetMoney() or 0
     mainFrame.onHandValue:SetText(GoldFormatter.Full(currentGold))
 
     -- Today
     local today = Data:GetDailySummary()
-    mainFrame.todayIncome:SetValue(GoldFormatter.Full(today.income),
-        COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
-    mainFrame.todayExpense:SetValue(GoldFormatter.Full(today.expense),
-        COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+    mainFrame.todayIncome:SetValue(GoldFormatter.Full(today.income), TC("INCOME"))
+    mainFrame.todayExpense:SetValue(GoldFormatter.Full(today.expense), TC("EXPENSE"))
 
     local todayNet = today.income - today.expense
-    local tc = todayNet >= 0 and COLORS.BALANCE_POS or COLORS.BALANCE_NEG
+    local tc = todayNet >= 0 and T("BALANCE_POS") or T("BALANCE_NEG")
     mainFrame.todayBalance:SetValue(
         (todayNet >= 0 and "+" or "-") .. GoldFormatter.Full(math.abs(todayNet)),
         tc[1], tc[2], tc[3])
 
     -- Month
     local month = Data:GetMonthlySummary()
-    mainFrame.monthIncome:SetValue(GoldFormatter.Full(month.income),
-        COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
-    mainFrame.monthExpense:SetValue(GoldFormatter.Full(month.expense),
-        COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+    mainFrame.monthIncome:SetValue(GoldFormatter.Full(month.income), TC("INCOME"))
+    mainFrame.monthExpense:SetValue(GoldFormatter.Full(month.expense), TC("EXPENSE"))
 
     local monthNet = month.income - month.expense
-    local mc = monthNet >= 0 and COLORS.BALANCE_POS or COLORS.BALANCE_NEG
+    local mc = monthNet >= 0 and T("BALANCE_POS") or T("BALANCE_NEG")
     mainFrame.monthBalance:SetValue(
         (monthNet >= 0 and "+" or "-") .. GoldFormatter.Full(math.abs(monthNet)),
         mc[1], mc[2], mc[3])
@@ -1074,12 +1054,10 @@ local function UpdateSummaries()
     local TrackerMod = GoldLedger:GetModule("Tracker")
     if TrackerMod then
         local session = TrackerMod:GetSessionStats()
-        mainFrame.sessionIncome:SetValue(GoldFormatter.Full(session.income),
-            COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
-        mainFrame.sessionExpense:SetValue(GoldFormatter.Full(session.expense),
-            COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+        mainFrame.sessionIncome:SetValue(GoldFormatter.Full(session.income), TC("INCOME"))
+        mainFrame.sessionExpense:SetValue(GoldFormatter.Full(session.expense), TC("EXPENSE"))
 
-        local sc = session.net >= 0 and COLORS.BALANCE_POS or COLORS.BALANCE_NEG
+        local sc = session.net >= 0 and T("BALANCE_POS") or T("BALANCE_NEG")
         mainFrame.sessionNet:SetValue(
             (session.net >= 0 and "+" or "-") .. GoldFormatter.Full(math.abs(session.net)),
             sc[1], sc[2], sc[3])
@@ -1113,22 +1091,18 @@ local function CreateCharsFrame()
     f:SetFrameStrata("DIALOG")
     f:SetClampedToScreen(true)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    f:SetBackdropColor(COLORS.FRAME_BG[1], COLORS.FRAME_BG[2], COLORS.FRAME_BG[3], COLORS.FRAME_BG[4])
-    f:SetBackdropBorderColor(COLORS.BORDER[1], COLORS.BORDER[2], COLORS.BORDER[3], COLORS.BORDER[4])
+    f:SetBackdrop(GetBackdrop())
+    f:SetBackdropColor(TC("FRAME_BG"))
+    f:SetBackdropBorderColor(TC("BORDER"))
 
     -- Title bar
     local titleBar = CreateFrame("Frame", nil, f, "BackdropTemplate")
     titleBar:SetHeight(26)
     titleBar:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
     titleBar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
-    titleBar:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background" })
-    titleBar:SetBackdropColor(COLORS.TITLE_BG[1], COLORS.TITLE_BG[2], COLORS.TITLE_BG[3], COLORS.TITLE_BG[4])
+    local Themes = GoldLedger:GetModule("Themes")
+    titleBar:SetBackdrop({ bgFile = Themes:GetBgTexture() })
+    titleBar:SetBackdropColor(TC("TITLE_BG"))
 
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", titleBar, "LEFT", 8, 0)
@@ -1138,11 +1112,11 @@ local function CreateCharsFrame()
     closeBtn:SetPoint("TOPRIGHT", titleBar, "TOPRIGHT", 2, 2)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-    -- Подзаголовок "За месяц"
+    -- Подзаголовок
     local subHeader = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     subHeader:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -36)
     subHeader:SetText(L["CHAR_MONTH_LABEL"])
-    subHeader:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+    subHeader:SetTextColor(TC("LABEL"))
 
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "GoldLedgerCharsScrollFrame", f, "UIPanelScrollFrameTemplate")
@@ -1152,7 +1126,7 @@ local function CreateCharsFrame()
     local scrollBg = f:CreateTexture(nil, "BACKGROUND", nil, -1)
     scrollBg:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", -2, 2)
     scrollBg:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 20, -2)
-    scrollBg:SetColorTexture(0.05, 0.05, 0.07, 0.6)
+    scrollBg:SetColorTexture(TC("SCROLL_BG"))
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
     scrollChild:SetWidth(300)
@@ -1162,13 +1136,13 @@ local function CreateCharsFrame()
     f.scrollChild = scrollChild
     f.charRows = {}
 
-    -- Итого по аккаунту (внизу)
+    -- Итого по аккаунту
     MakeSeparator(f, -340)
 
     f.totalLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.totalLabel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 14)
     f.totalLabel:SetText(L["HEADER_ACCOUNT_TOTAL"])
-    f.totalLabel:SetTextColor(COLORS.HEADER[1], COLORS.HEADER[2], COLORS.HEADER[3])
+    f.totalLabel:SetTextColor(TC("HEADER"))
 
     f.totalValue = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.totalValue:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 14)
@@ -1203,7 +1177,7 @@ local function UpdateCharactersList()
             if i % 2 == 0 then
                 local bg = row:CreateTexture(nil, "BACKGROUND")
                 bg:SetAllPoints()
-                bg:SetColorTexture(COLORS.ROW_ALT[1], COLORS.ROW_ALT[2], COLORS.ROW_ALT[3], COLORS.ROW_ALT[4])
+                bg:SetColorTexture(TC("ROW_ALT"))
             end
 
             row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -1213,7 +1187,7 @@ local function UpdateCharactersList()
             row.detailText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             row.detailText:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 8, 4)
             row.detailText:SetJustifyH("LEFT")
-            row.detailText:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+            row.detailText:SetTextColor(TC("LABEL"))
 
             row.netText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
             row.netText:SetPoint("RIGHT", row, "RIGHT", -8, 0)
@@ -1228,7 +1202,7 @@ local function UpdateCharactersList()
                        "  " .. L["HEADER_EXPENSE"] .. ": " .. GoldFormatter.Short(charInfo.monthExpense)
         row.detailText:SetText(detail)
 
-        local netColor = charInfo.monthNet >= 0 and COLORS.BALANCE_POS or COLORS.BALANCE_NEG
+        local netColor = charInfo.monthNet >= 0 and T("BALANCE_POS") or T("BALANCE_NEG")
         local netSign = charInfo.monthNet >= 0 and "+" or "-"
         row.netText:SetText(netSign .. GoldFormatter.Full(math.abs(charInfo.monthNet)))
         row.netText:SetTextColor(netColor[1], netColor[2], netColor[3])
@@ -1242,12 +1216,11 @@ local function UpdateCharactersList()
 
     scrollChild:SetHeight(math.max(1, #chars * CHAR_ROW_HEIGHT))
 
-    -- Итого по аккаунту
     local totalNet = 0
     for _, charInfo in ipairs(chars) do
         totalNet = totalNet + charInfo.monthNet
     end
-    local tc = totalNet >= 0 and COLORS.BALANCE_POS or COLORS.BALANCE_NEG
+    local tc = totalNet >= 0 and T("BALANCE_POS") or T("BALANCE_NEG")
     charsFrame.totalValue:SetText(
         (totalNet >= 0 and "+" or "-") .. GoldFormatter.Full(math.abs(totalNet)))
     charsFrame.totalValue:SetTextColor(tc[1], tc[2], tc[3])
@@ -1271,22 +1244,17 @@ local function CreateExportFrame()
     f:SetFrameLevel(100)
     f:SetClampedToScreen(true)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    f:SetBackdropColor(COLORS.FRAME_BG[1], COLORS.FRAME_BG[2], COLORS.FRAME_BG[3], COLORS.FRAME_BG[4])
-    f:SetBackdropBorderColor(COLORS.BORDER[1], COLORS.BORDER[2], COLORS.BORDER[3], COLORS.BORDER[4])
+    f:SetBackdrop(GetBackdrop())
+    f:SetBackdropColor(TC("FRAME_BG"))
+    f:SetBackdropBorderColor(TC("BORDER"))
 
-    -- Title bar
     local titleBar = CreateFrame("Frame", nil, f, "BackdropTemplate")
     titleBar:SetHeight(26)
     titleBar:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
     titleBar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
-    titleBar:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background" })
-    titleBar:SetBackdropColor(COLORS.TITLE_BG[1], COLORS.TITLE_BG[2], COLORS.TITLE_BG[3], COLORS.TITLE_BG[4])
+    local Themes = GoldLedger:GetModule("Themes")
+    titleBar:SetBackdrop({ bgFile = Themes:GetBgTexture() })
+    titleBar:SetBackdropColor(TC("TITLE_BG"))
 
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", titleBar, "LEFT", 8, 0)
@@ -1296,13 +1264,11 @@ local function CreateExportFrame()
     closeBtn:SetPoint("TOPRIGHT", titleBar, "TOPRIGHT", 2, 2)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-    -- Hint
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -36)
     hint:SetText(L["EXPORT_HINT"])
-    hint:SetTextColor(0.7, 0.7, 0.7)
+    hint:SetTextColor(TC("TEXT_HINT"))
 
-    -- ScrollFrame + EditBox
     local scrollFrame = CreateFrame("ScrollFrame", "GoldLedgerExportScrollFrame", f, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -52)
     scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -28, 8)
@@ -1310,7 +1276,7 @@ local function CreateExportFrame()
     local scrollBg = f:CreateTexture(nil, "BACKGROUND", nil, -1)
     scrollBg:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", -2, 2)
     scrollBg:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 20, -2)
-    scrollBg:SetColorTexture(0.04, 0.04, 0.06, 0.8)
+    scrollBg:SetColorTexture(TC("CHART_BG"))
 
     local editBox = CreateFrame("EditBox", "GoldLedgerExportEditBox", scrollFrame)
     editBox:SetMultiLine(true)
@@ -1338,7 +1304,7 @@ end
 -------------------------------------------------------------------------------
 local breakdownFrame
 local activeBreakdownPeriod = "today"
-local UpdateBreakdownData -- forward declaration
+local UpdateBreakdownData
 
 local function CreateBreakdownFrame()
     local Data = GoldLedger:GetModule("Data")
@@ -1355,22 +1321,17 @@ local function CreateBreakdownFrame()
     f:SetFrameStrata("DIALOG")
     f:SetClampedToScreen(true)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    f:SetBackdropColor(COLORS.FRAME_BG[1], COLORS.FRAME_BG[2], COLORS.FRAME_BG[3], COLORS.FRAME_BG[4])
-    f:SetBackdropBorderColor(COLORS.BORDER[1], COLORS.BORDER[2], COLORS.BORDER[3], COLORS.BORDER[4])
+    f:SetBackdrop(GetBackdrop())
+    f:SetBackdropColor(TC("FRAME_BG"))
+    f:SetBackdropBorderColor(TC("BORDER"))
 
-    -- Title bar
     local titleBar = CreateFrame("Frame", nil, f, "BackdropTemplate")
     titleBar:SetHeight(26)
     titleBar:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
     titleBar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
-    titleBar:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background" })
-    titleBar:SetBackdropColor(COLORS.TITLE_BG[1], COLORS.TITLE_BG[2], COLORS.TITLE_BG[3], COLORS.TITLE_BG[4])
+    local Themes = GoldLedger:GetModule("Themes")
+    titleBar:SetBackdrop({ bgFile = Themes:GetBgTexture() })
+    titleBar:SetBackdropColor(TC("TITLE_BG"))
 
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", titleBar, "LEFT", 8, 0)
@@ -1395,12 +1356,7 @@ local function CreateBreakdownFrame()
         local btn = CreateFrame("Button", nil, f, "BackdropTemplate")
         btn:SetSize(60, 18)
         btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", btnX, -36)
-        btn:SetBackdrop({
-            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true, tileSize = 8, edgeSize = 8,
-            insets = { left = 2, right = 2, top = 2, bottom = 2 },
-        })
+        btn:SetBackdrop(GetSmallBackdrop())
         local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         btnText:SetPoint("CENTER")
         btnText:SetText(info.label)
@@ -1422,68 +1378,63 @@ local function CreateBreakdownFrame()
     local srcHeader = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     srcHeader:SetPoint("TOPLEFT", f, "TOPLEFT", 18, colY)
     srcHeader:SetText(L["BREAKDOWN_SOURCE"])
-    srcHeader:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+    srcHeader:SetTextColor(TC("LABEL"))
 
     local incHeader = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     incHeader:SetPoint("TOPRIGHT", f, "TOP", 40, colY)
     incHeader:SetText(L["HEADER_INCOME"])
-    incHeader:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+    incHeader:SetTextColor(TC("LABEL"))
     incHeader:SetJustifyH("RIGHT")
 
     local expHeader = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     expHeader:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, colY)
     expHeader:SetText(L["HEADER_EXPENSE"])
-    expHeader:SetTextColor(COLORS.LABEL[1], COLORS.LABEL[2], COLORS.LABEL[3])
+    expHeader:SetTextColor(TC("LABEL"))
     expHeader:SetJustifyH("RIGHT")
 
     MakeSeparator(f, colY - 14)
 
     -- Source rows
-    local ROW_HEIGHT = 26
+    local BD_ROW_HEIGHT = 26
     local rowY = colY - 20
     f.sourceRows = {}
 
     for idx, src in ipairs(Data.ALL_SOURCES) do
-        local color = SOURCE_COLORS[src] or SOURCE_COLORS.unknown
+        local sc = GetSourceColors()
+        local color = sc[src] or sc.unknown
         local localeKey = Tracker:GetSourceLocaleKey(src)
 
-        -- Row background (alternating)
         if idx % 2 == 0 then
             local rowBg = f:CreateTexture(nil, "BACKGROUND")
             rowBg:SetPoint("TOPLEFT", f, "TOPLEFT", 6, rowY + 2)
             rowBg:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, rowY + 2)
-            rowBg:SetHeight(ROW_HEIGHT)
-            rowBg:SetColorTexture(COLORS.ROW_ALT[1], COLORS.ROW_ALT[2], COLORS.ROW_ALT[3], COLORS.ROW_ALT[4])
+            rowBg:SetHeight(BD_ROW_HEIGHT)
+            rowBg:SetColorTexture(TC("ROW_ALT"))
         end
 
-        -- Source name
         local srcName = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         srcName:SetPoint("TOPLEFT", f, "TOPLEFT", 18, rowY - 4)
         srcName:SetText(L[localeKey])
         srcName:SetTextColor(color[1], color[2], color[3])
 
-        -- Income value
         local incVal = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         incVal:SetPoint("TOPRIGHT", f, "TOP", 40, rowY - 4)
         incVal:SetJustifyH("RIGHT")
 
-        -- Expense value
         local expVal = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         expVal:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, rowY - 4)
         expVal:SetJustifyH("RIGHT")
 
         f.sourceRows[src] = { income = incVal, expense = expVal }
-        rowY = rowY - ROW_HEIGHT
+        rowY = rowY - BD_ROW_HEIGHT
     end
 
-    -- Separator before totals
     MakeSeparator(f, rowY + 2)
 
-    -- Total row
     local totalLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     totalLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 18, rowY - 8)
     totalLabel:SetText(L["BREAKDOWN_TOTAL"])
-    totalLabel:SetTextColor(COLORS.HEADER[1], COLORS.HEADER[2], COLORS.HEADER[3])
+    totalLabel:SetTextColor(TC("HEADER"))
 
     f.totalIncome = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.totalIncome:SetPoint("TOPRIGHT", f, "TOP", 40, rowY - 8)
@@ -1506,52 +1457,303 @@ UpdateBreakdownData = function()
     local Data = GoldLedger:GetModule("Data")
     local sourceTotals, grandTotals = Data:GetSourceBreakdown(activeBreakdownPeriod)
 
-    -- Update period button colors
     for key, btn in pairs(breakdownFrame.periodBtns) do
         if key == activeBreakdownPeriod then
-            btn:SetBackdropColor(0.3, 0.5, 0.3, 0.8)
+            btn:SetBackdropColor(TC("BTN_ACTIVE"))
         else
-            btn:SetBackdropColor(0.2, 0.2, 0.25, 0.6)
+            btn:SetBackdropColor(TC("BTN_INACTIVE"))
         end
-        btn:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+        btn:SetBackdropBorderColor(TC("BTN_BORDER"))
     end
 
-    -- Update source rows
     for src, row in pairs(breakdownFrame.sourceRows) do
         local data = sourceTotals[src] or { income = 0, expense = 0 }
 
         if data.income > 0 then
             row.income:SetText("+" .. GoldFormatter.Short(data.income))
-            row.income:SetTextColor(COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
+            row.income:SetTextColor(TC("INCOME"))
         else
             row.income:SetText("0")
-            row.income:SetTextColor(0.4, 0.4, 0.4)
+            row.income:SetTextColor(TC("ZERO_VALUE"))
         end
 
         if data.expense > 0 then
             row.expense:SetText("-" .. GoldFormatter.Short(data.expense))
-            row.expense:SetTextColor(COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+            row.expense:SetTextColor(TC("EXPENSE"))
         else
             row.expense:SetText("0")
-            row.expense:SetTextColor(0.4, 0.4, 0.4)
+            row.expense:SetTextColor(TC("ZERO_VALUE"))
         end
     end
 
-    -- Update totals
     if grandTotals.income > 0 then
         breakdownFrame.totalIncome:SetText("+" .. GoldFormatter.Short(grandTotals.income))
-        breakdownFrame.totalIncome:SetTextColor(COLORS.INCOME[1], COLORS.INCOME[2], COLORS.INCOME[3])
+        breakdownFrame.totalIncome:SetTextColor(TC("INCOME"))
     else
         breakdownFrame.totalIncome:SetText("0")
-        breakdownFrame.totalIncome:SetTextColor(0.4, 0.4, 0.4)
+        breakdownFrame.totalIncome:SetTextColor(TC("ZERO_VALUE"))
     end
 
     if grandTotals.expense > 0 then
         breakdownFrame.totalExpense:SetText("-" .. GoldFormatter.Short(grandTotals.expense))
-        breakdownFrame.totalExpense:SetTextColor(COLORS.EXPENSE[1], COLORS.EXPENSE[2], COLORS.EXPENSE[3])
+        breakdownFrame.totalExpense:SetTextColor(TC("EXPENSE"))
     else
         breakdownFrame.totalExpense:SetText("0")
-        breakdownFrame.totalExpense:SetTextColor(0.4, 0.4, 0.4)
+        breakdownFrame.totalExpense:SetTextColor(TC("ZERO_VALUE"))
+    end
+end
+
+-------------------------------------------------------------------------------
+-- Settings frame (forward declaration)
+-------------------------------------------------------------------------------
+local settingsFrame
+
+-------------------------------------------------------------------------------
+-- Theme switching: destroy-and-recreate
+-------------------------------------------------------------------------------
+
+function UI:ApplyTheme()
+    local frames = { mainFrame, charsFrame, exportFrame, breakdownFrame, goalDialog }
+    for _, frame in ipairs(frames) do
+        if frame then frame:Hide(); frame:SetParent(nil) end
+    end
+    if settingsFrame then settingsFrame:Hide() end
+
+    mainFrame = nil
+    charsFrame = nil
+    exportFrame = nil
+    breakdownFrame = nil
+    goalDialog = nil
+
+    if minimapButton then
+        minimapButton:Hide()
+        minimapButton = nil
+    end
+    CreateMinimapButton()
+end
+
+-------------------------------------------------------------------------------
+-- Settings Popup
+-------------------------------------------------------------------------------
+
+-- Settings: создаём фрейм один раз, обновляем содержимое через RefreshSettings
+local settingsElements = {}  -- хранит ссылки на элементы для обновления
+local RefreshSettings  -- forward declaration
+
+local function CreateSettingsFrame()
+    if settingsFrame then return end
+
+    local f = CreateFrame("Frame", "GoldLedgerSettingsFrame", UIParent, "BackdropTemplate")
+    f:SetSize(320, 300)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetFrameStrata("FULLSCREEN_DIALOG")
+    f:SetClampedToScreen(true)
+
+    f:SetBackdrop(GetBackdrop())
+
+    -- Title bar
+    local titleBar = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    titleBar:SetHeight(26)
+    titleBar:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
+    titleBar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
+    settingsElements.titleBar = titleBar
+
+    local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("LEFT", titleBar, "LEFT", 8, 0)
+    settingsElements.title = title
+
+    local closeBtn = CreateFrame("Button", nil, titleBar, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", titleBar, "TOPRIGHT", 2, 2)
+    closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    local y = -40
+
+    -- Theme label
+    local themeLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    themeLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 14, y)
+    settingsElements.themeLabel = themeLabel
+
+    -- Theme buttons (3 max)
+    y = y - 20
+    settingsElements.themeBtns = {}
+    for i = 1, 3 do
+        local tbtn = CreateFrame("Button", nil, f, "BackdropTemplate")
+        tbtn:SetSize(90, 22)
+        tbtn:SetPoint("TOPLEFT", f, "TOPLEFT", 14 + (i - 1) * 96, y)
+        tbtn:SetBackdrop(GetSmallBackdrop())
+        local tbtnText = tbtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        tbtnText:SetPoint("CENTER")
+        tbtn.text = tbtnText
+        tbtn:Hide()
+        settingsElements.themeBtns[i] = tbtn
+    end
+
+    y = y - 36
+
+    -- Minimap label
+    local minimapLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    minimapLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 14, y)
+    settingsElements.minimapLabel = minimapLabel
+
+    local minimapCheck = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+    minimapCheck:SetPoint("LEFT", minimapLabel, "RIGHT", 6, 0)
+    minimapCheck:SetScript("OnClick", function(self)
+        local checked = self:GetChecked()
+        GoldLedgerDB.settings.showMinimap = checked
+        if minimapButton then
+            if checked then minimapButton:Show() else minimapButton:Hide() end
+        end
+    end)
+    settingsElements.minimapCheck = minimapCheck
+
+    y = y - 36
+
+    -- Language label
+    local langLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    langLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 14, y)
+    settingsElements.langLabel = langLabel
+
+    -- Language buttons (3)
+    y = y - 20
+    settingsElements.langBtns = {}
+    local langIds = { "auto", "enUS", "ruRU" }
+    local langLabelsFixed = { nil, "English", "Русский" } -- auto label обновляется
+    for i = 1, 3 do
+        local btn = CreateFrame("Button", nil, f, "BackdropTemplate")
+        btn:SetSize(90, 22)
+        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 14 + (i - 1) * 96, y)
+        btn:SetBackdrop(GetSmallBackdrop())
+        local lbText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbText:SetPoint("CENTER")
+        btn.text = lbText
+        btn.langId = langIds[i]
+        btn:SetScript("OnClick", function()
+            GoldLedgerDB.settings.language = langIds[i]
+            local localeArg = langIds[i] == "auto" and nil or langIds[i]
+            L:SetLocale(localeArg)
+            C_Timer.After(0, function()
+                UI:ApplyTheme()
+                RefreshSettings()
+            end)
+        end)
+        settingsElements.langBtns[i] = btn
+    end
+
+    y = y - 36
+
+    -- Reset session button
+    local resetBtn = CreateFrame("Button", nil, f, "BackdropTemplate")
+    resetBtn:SetSize(140, 24)
+    resetBtn:SetPoint("TOPLEFT", f, "TOPLEFT", 14, y)
+    resetBtn:SetBackdrop(GetSmallBackdrop())
+    local resetText = resetBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    resetText:SetPoint("CENTER")
+    resetBtn.text = resetText
+    resetBtn:SetScript("OnClick", function()
+        local Tracker = GoldLedger:GetModule("Tracker")
+        Tracker:ResetSession()
+        UI:ApplyTheme()
+        settingsFrame:Hide()
+    end)
+    settingsElements.resetBtn = resetBtn
+
+    table.insert(UISpecialFrames, "GoldLedgerSettingsFrame")
+
+    settingsFrame = f
+    f:Hide()
+end
+
+RefreshSettings = function()
+    if not settingsFrame then CreateSettingsFrame() end
+    local f = settingsFrame
+    local Themes = GoldLedger:GetModule("Themes")
+
+    -- Обновить цвета фрейма
+    f:SetBackdropColor(TC("FRAME_BG"))
+    f:SetBackdropBorderColor(TC("BORDER"))
+
+    -- Title bar
+    settingsElements.titleBar:SetBackdrop({ bgFile = Themes:GetBgTexture() })
+    settingsElements.titleBar:SetBackdropColor(TC("TITLE_BG"))
+    settingsElements.title:SetText("|cffffd700" .. L["HEADER_SETTINGS"] .. "|r")
+
+    -- Theme label
+    settingsElements.themeLabel:SetText(L["SETTINGS_THEME"])
+    settingsElements.themeLabel:SetTextColor(TC("LABEL"))
+
+    -- Theme buttons
+    local availableThemes = Themes:GetAvailableThemes()
+    local currentThemeId = Themes:GetActiveId()
+    for i, tbtn in ipairs(settingsElements.themeBtns) do
+        local themeInfo = availableThemes[i]
+        if themeInfo then
+            tbtn.text:SetText(themeInfo.name)
+            tbtn:SetScript("OnClick", function()
+                C_Timer.After(0, function()
+                    Themes:SetTheme(themeInfo.id)
+                    RefreshSettings()
+                end)
+            end)
+            if themeInfo.id == currentThemeId then
+                tbtn:SetBackdropColor(TC("BTN_ACTIVE"))
+                tbtn:SetBackdropBorderColor(TC("ACCENT_BTN_BORDER"))
+                tbtn.text:SetTextColor(TC("TEXT_WHITE"))
+            else
+                tbtn:SetBackdropColor(TC("BTN_BG"))
+                tbtn:SetBackdropBorderColor(TC("BTN_BORDER"))
+                tbtn.text:SetTextColor(TC("LABEL"))
+            end
+            tbtn:Show()
+        else
+            tbtn:Hide()
+        end
+    end
+
+    -- Minimap
+    settingsElements.minimapLabel:SetText(L["SETTINGS_MINIMAP"])
+    settingsElements.minimapLabel:SetTextColor(TC("LABEL"))
+    settingsElements.minimapCheck:SetChecked(GoldLedgerDB.settings.showMinimap ~= false)
+
+    -- Language
+    settingsElements.langLabel:SetText(L["SETTINGS_LANGUAGE"])
+    settingsElements.langLabel:SetTextColor(TC("LABEL"))
+
+    local currentLang = GoldLedgerDB.settings.language or "auto"
+    local langLabels = { L["SETTINGS_LANG_AUTO"], "English", "Русский" }
+    for i, btn in ipairs(settingsElements.langBtns) do
+        btn.text:SetText(langLabels[i])
+        if btn.langId == currentLang then
+            btn:SetBackdropColor(TC("BTN_ACTIVE"))
+            btn:SetBackdropBorderColor(TC("ACCENT_BTN_BORDER"))
+            btn.text:SetTextColor(TC("TEXT_WHITE"))
+        else
+            btn:SetBackdropColor(TC("BTN_BG"))
+            btn:SetBackdropBorderColor(TC("BTN_BORDER"))
+            btn.text:SetTextColor(TC("LABEL"))
+        end
+    end
+
+    -- Reset session button
+    settingsElements.resetBtn.text:SetText(L["SETTINGS_RESET_SESSION"])
+    settingsElements.resetBtn:SetBackdropColor(TC("BTN_BG"))
+    settingsElements.resetBtn:SetBackdropBorderColor(TC("BTN_BORDER"))
+    settingsElements.resetBtn.text:SetTextColor(TC("EXPENSE"))
+end
+
+function UI:ToggleSettingsFrame()
+    if not settingsFrame then
+        CreateSettingsFrame()
+    end
+    RefreshSettings()
+    if settingsFrame:IsShown() then
+        settingsFrame:Hide()
+    else
+        settingsFrame:Show()
     end
 end
 
@@ -1621,6 +1823,10 @@ end
 
 function UI:OnEnable()
     CreateMinimapButton()
+
+    if GoldLedgerDB and GoldLedgerDB.settings and GoldLedgerDB.settings.showMinimap == false then
+        if minimapButton then minimapButton:Hide() end
+    end
 
     local Tracker = GoldLedger:GetModule("Tracker")
     if Tracker then
